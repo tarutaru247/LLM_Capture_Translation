@@ -5,6 +5,7 @@ import logging
 from PyQt5.QtWidgets import (QDialog, QTabWidget, QVBoxLayout, QHBoxLayout, 
                            QLabel, QLineEdit, QRadioButton, QCheckBox, 
                            QPushButton, QGroupBox, QComboBox, QMessageBox, QWidget)
+from PyQt5.QtGui import QIntValidator
 from PyQt5.QtCore import Qt
 
 from ..utils.settings_manager import SettingsManager
@@ -118,6 +119,25 @@ class SettingsDialog(QDialog):
         api_layout.addLayout(verify_layout)
         api_layout.addStretch()
         
+        # 共通モデル設定
+        model_settings_group = QGroupBox("モデル設定")
+        model_settings_layout = QVBoxLayout(model_settings_group)
+
+        model_label = QLabel("モデル名:")
+        self.model_edit = QLineEdit()
+        self.model_edit.setPlaceholderText("例: gemini-2.0-flash-lite, gpt-4o")
+        model_settings_layout.addWidget(model_label)
+        model_settings_layout.addWidget(self.model_edit)
+
+        timeout_label = QLabel("APIタイムアウト (秒):")
+        self.timeout_edit = QLineEdit()
+        self.timeout_edit.setPlaceholderText("例: 60")
+        self.timeout_edit.setValidator(QIntValidator(1, 300)) # 1秒から300秒
+        model_settings_layout.addWidget(timeout_label)
+        model_settings_layout.addWidget(self.timeout_edit)
+
+        api_layout.addWidget(model_settings_group)
+        
         self.tab_widget.addTab(api_tab, "API設定")
     
     def _create_language_settings_tab(self):
@@ -139,18 +159,6 @@ class SettingsDialog(QDialog):
         target_lang_layout.addWidget(self.target_language_combo)
         
         language_layout.addWidget(target_lang_group)
-        
-        # OCR言語設定
-        ocr_lang_group = QGroupBox("OCR言語")
-        ocr_lang_layout = QVBoxLayout(ocr_lang_group)
-        
-        self.jpn_checkbox = QCheckBox("日本語")
-        ocr_lang_layout.addWidget(self.jpn_checkbox)
-        
-        self.eng_checkbox = QCheckBox("英語")
-        ocr_lang_layout.addWidget(self.eng_checkbox)
-        
-        language_layout.addWidget(ocr_lang_group)
         language_layout.addStretch()
         
         self.tab_widget.addTab(language_tab, "言語設定")
@@ -178,6 +186,8 @@ class SettingsDialog(QDialog):
         openai_api_key = self.settings_manager.get_api_key('openai')
         gemini_api_key = self.settings_manager.get_api_key('gemini')
         selected_api = self.settings_manager.get_selected_api()
+        model = self.settings_manager.get_model()
+        timeout = self.settings_manager.get_timeout()
         
         self.openai_api_key_edit.setText(openai_api_key if openai_api_key else "")
         self.gemini_api_key_edit.setText(gemini_api_key if gemini_api_key else "")
@@ -186,19 +196,17 @@ class SettingsDialog(QDialog):
             self.gemini_radio.setChecked(True)
         else:
             self.openai_radio.setChecked(True)
+
+        self.model_edit.setText(model if model else "")
+        self.timeout_edit.setText(str(timeout) if timeout else "")
         
         # 言語設定
         target_language = self.settings_manager.get_target_language()
-        ocr_languages = self.settings_manager.get_ocr_languages()
         
         # 翻訳先言語の設定
         index = self.target_language_combo.findData(target_language)
         if index >= 0:
             self.target_language_combo.setCurrentIndex(index)
-        
-        # OCR言語の設定
-        self.jpn_checkbox.setChecked('jpn' in ocr_languages)
-        self.eng_checkbox.setChecked('eng' in ocr_languages)
         
         # 一般設定
         start_minimized = self.settings_manager.get_setting('ui', 'start_minimized', False)
@@ -211,27 +219,18 @@ class SettingsDialog(QDialog):
             openai_api_key = self.openai_api_key_edit.text()
             gemini_api_key = self.gemini_api_key_edit.text()
             selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'
+            model = self.model_edit.text()
+            timeout = int(self.timeout_edit.text()) if self.timeout_edit.text().isdigit() else 60
             
             self.settings_manager.set_api_key('openai', openai_api_key)
             self.settings_manager.set_api_key('gemini', gemini_api_key)
             self.settings_manager.set_selected_api(selected_api)
+            self.settings_manager.set_model(model)
+            self.settings_manager.set_timeout(timeout)
             
             # 言語設定
             target_language = self.target_language_combo.currentData()
             self.settings_manager.set_target_language(target_language)
-            
-            ocr_languages = []
-            if self.jpn_checkbox.isChecked():
-                ocr_languages.append('jpn')
-            if self.eng_checkbox.isChecked():
-                ocr_languages.append('eng')
-            
-            # 少なくとも1つの言語を選択する必要がある
-            if not ocr_languages:
-                QMessageBox.warning(self, "警告", "OCR言語は少なくとも1つ選択してください")
-                return
-            
-            self.settings_manager.set_ocr_languages(ocr_languages)
             
             # 一般設定
             start_minimized = self.start_minimized_checkbox.isChecked()

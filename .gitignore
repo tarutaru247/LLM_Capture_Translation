@@ -8,3 +8,8 @@ settings.json
 
 # 開発環境用スクリプト
 install-pyenv-win.ps1
+
+Windows 10/
+
+docs/
+todo.md

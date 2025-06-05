@@ -1,5 +1,4 @@
 PyQt5
-pytesseract
 Pillow
 openai
 google-generativeai

@@ -12,7 +12,7 @@ from PyQt5.QtGui import QIcon, QPixmap
 from ..ui.screen_capture import ScreenCaptureManager
 from ..utils.settings_manager import SettingsManager
 from ..ui.settings_dialog import SettingsDialog
-from ..ocr.ocr_processor import OCRProcessor
+from ..ocr.vision_ocr_service import VisionOCRService
 from ..translator.translation_manager import TranslationManager
 
 logger = logging.getLogger('ocr_translator')
@@ -29,8 +29,8 @@ class MainWindow(QMainWindow):
         # スクリーンキャプチャマネージャーの初期化
         self.capture_manager = ScreenCaptureManager(self)
         
-        # OCRプロセッサーの初期化
-        self.ocr_processor = OCRProcessor()
+        # OCRサービス（Vision API）の初期化
+        self.ocr_service = VisionOCRService()
         
         # 翻訳マネージャーの初期化
         self.translation_manager = TranslationManager()
@@ -210,33 +210,24 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage("有効な画像がありません")
                 return
             
-            # OCR言語の取得
-            ocr_languages = self.settings_manager.get_ocr_languages()
-            if not ocr_languages:
-                # デフォルトで日本語と英語を使用
-                ocr_languages = ['jpn', 'eng']
-            
-            lang = '+'.join(ocr_languages)
-            self.status_bar.showMessage(f"OCR処理中... ({lang})")
+            self.status_bar.showMessage("Vision OCR処理中...")
             
             # OCR処理の実行
-            extracted_text = self.ocr_processor.process_image(self.captured_pixmap, lang)
+            # VisionOCRServiceは内部で言語ヒントを処理するため、ここではlangを渡さない
+            extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
             
-            if extracted_text:
+            if extracted_text and not extracted_text.startswith("エラー:"):
                 self.extracted_text = extracted_text
                 self.original_text_edit.setText(extracted_text)
                 
-                # 言語検出
-                detected_lang = self.ocr_processor.detect_language(extracted_text)
-                logger.info(f"検出された言語: {detected_lang}")
-                
-                self.status_bar.showMessage(f"OCR処理完了 (検出言語: {detected_lang})")
+                logger.info(f"Vision OCR処理完了（{len(extracted_text)}文字）")
+                self.status_bar.showMessage(f"Vision OCR処理完了")
             else:
-                self.status_bar.showMessage("テキストを抽出できませんでした")
-                self.original_text_edit.setText("テキストを抽出できませんでした。別の範囲を選択してください。")
+                self.status_bar.showMessage(f"テキストを抽出できませんでした: {extracted_text}")
+                self.original_text_edit.setText(f"テキストを抽出できませんでした。別の範囲を選択してください。\nエラー: {extracted_text}")
         
         except Exception as e:
-            error_msg = f"OCR処理中にエラーが発生しました: {str(e)}"
+            error_msg = f"Vision OCR処理中にエラーが発生しました: {str(e)}"
             logger.error(error_msg, exc_info=True)
             self.status_bar.showMessage(error_msg)
             self.original_text_edit.setText(f"エラー: {error_msg}")

@@ -29,7 +29,7 @@ def create_executable():
         subprocess.call([sys.executable, "-m", "pip", "install", "pyinstaller"])
     
     # 必要なライブラリがインストールされているか確認
-    required_packages = ["PyQt5", "pytesseract", "Pillow", "openai", "google-generativeai"]
+    required_packages = ["PyQt5", "Pillow", "openai", "google-generativeai"]
     for package in required_packages:
         try:
             __import__(package)

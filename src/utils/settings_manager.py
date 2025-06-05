@@ -20,13 +20,14 @@ class SettingsManager:
         """設定ファイルから設定を読み込む"""
         default_settings = {
             'api': {
-                'selected_api': 'openai',  # 'openai' または 'gemini'
+                'selected_api': 'openai',  # 'openai' または 'gemini' (翻訳とOCRの両方で使用)
                 'openai_api_key': '',
-                'gemini_api_key': ''
+                'gemini_api_key': '',
+                'model': 'gemini-2.0-flash-lite', # 翻訳とOCR共通のモデル名
+                'timeout': 60 # APIタイムアウト (秒)
             },
             'language': {
-                'target_language': 'ja',  # デフォルトは日本語
-                'ocr_languages': ['jpn', 'eng']  # Tesseract言語コード
+                'target_language': 'ja'  # デフォルトは日本語
             },
             'ui': {
                 'theme': 'system',
@@ -109,22 +110,30 @@ class SettingsManager:
         """翻訳先言語を設定する"""
         return self.set_setting('language', 'target_language', language_code)
     
-    def get_ocr_languages(self):
-        """OCR言語リストを取得する"""
-        return self.get_setting('language', 'ocr_languages')
-    
-    def set_ocr_languages(self, language_codes):
-        """OCR言語リストを設定する"""
-        return self.set_setting('language', 'ocr_languages', language_codes)
-    
     def get_selected_api(self):
-        """選択されているAPIを取得する"""
+        """選択されているAPI (翻訳とOCRの両方で使用) を取得する"""
         return self.get_setting('api', 'selected_api')
     
     def set_selected_api(self, api_type):
-        """使用するAPIを設定する"""
+        """使用するAPI (翻訳とOCRの両方で使用) を設定する"""
         if api_type.lower() in ['openai', 'gemini']:
             return self.set_setting('api', 'selected_api', api_type.lower())
         else:
             logger.warning(f"不明なAPI種類: {api_type}")
             return False
+
+    def get_model(self):
+        """使用するモデル名を取得する"""
+        return self.get_setting('api', 'model')
+
+    def set_model(self, model_name):
+        """使用するモデル名を設定する"""
+        return self.set_setting('api', 'model', model_name)
+
+    def get_timeout(self):
+        """APIのタイムアウト値を取得する"""
+        return self.get_setting('api', 'timeout')
+
+    def set_timeout(self, timeout):
+        """APIのタイムアウト値を設定する"""
+        return self.set_setting('api', 'timeout', timeout)
