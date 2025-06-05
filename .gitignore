@@ -1,0 +1,10 @@
+# ビルド成果物
+build/
+*.spec
+*.pyc
+
+# 機密情報を含む可能性のある設定ファイル
+settings.json
+
+# 開発環境用スクリプト
+install-pyenv-win.ps1
