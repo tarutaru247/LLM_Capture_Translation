@@ -9,6 +9,7 @@ from PyQt5.QtGui import QIntValidator
 from PyQt5.QtCore import Qt
 
 from ..utils.settings_manager import SettingsManager
+from ..translator.translation_manager import TranslationManager # 追加
 
 logger = logging.getLogger('ocr_translator')
 
@@ -19,6 +20,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         
         self.settings_manager = SettingsManager()
+        self.translation_manager = TranslationManager() # 追加
         
         self._init_ui()
         self._load_settings()
@@ -29,6 +31,87 @@ class SettingsDialog(QDialog):
         """UIの初期化"""
         self.setWindowTitle("設定")
         self.setMinimumWidth(500)
+
+        # スタイルシートの適用
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f0f0f0;
+            }
+            QLabel {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                color: #333333;
+            }
+            QPushButton {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                background-color: #4CAF50;
+                color: white;
+                border-radius: 5px;
+                padding: 10px 20px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QLineEdit {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                padding: 5px;
+                background-color: white;
+            }
+            QComboBox {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                padding: 5px;
+                background-color: white;
+            }
+            QTabWidget::pane {
+                border: 1px solid #cccccc;
+                background-color: white;
+            }
+            QTabBar::tab {
+                background: #e0e0e0;
+                border: 1px solid #cccccc;
+                border-bottom-color: #e0e0e0;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                min-width: 8ex;
+                padding: 8px;
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+            }
+            QTabBar::tab:selected {
+                background: white;
+                border-bottom-color: white;
+            }
+            QGroupBox {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                font-weight: bold;
+                margin-top: 1ex;
+                border: 1px solid #cccccc;
+                border-radius: 5px;
+                padding-top: 1ex;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 3px;
+                background-color: #f0f0f0;
+            }
+            QRadioButton {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+            }
+            QCheckBox {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+            }
+        """)
         
         # メインレイアウト
         main_layout = QVBoxLayout(self)
@@ -69,6 +152,8 @@ class SettingsDialog(QDialog):
         # OpenAI API設定
         openai_group = QGroupBox("OpenAI API設定")
         openai_layout = QVBoxLayout(openai_group)
+        openai_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
+        openai_layout.setSpacing(10) # ウィジェット間のスペースを調整
         
         openai_key_layout = QHBoxLayout()
         openai_key_layout.addWidget(QLabel("APIキー:"))
@@ -84,6 +169,8 @@ class SettingsDialog(QDialog):
         # Gemini API設定
         gemini_group = QGroupBox("Google Gemini API設定")
         gemini_layout = QVBoxLayout(gemini_group)
+        gemini_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
+        gemini_layout.setSpacing(10) # ウィジェット間のスペースを調整
         
         gemini_key_layout = QHBoxLayout()
         gemini_key_layout.addWidget(QLabel("APIキー:"))
@@ -99,6 +186,8 @@ class SettingsDialog(QDialog):
         # API選択
         api_selection_group = QGroupBox("使用するAPI")
         api_selection_layout = QVBoxLayout(api_selection_group)
+        api_selection_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
+        api_selection_layout.setSpacing(10) # ウィジェット間のスペースを調整
         
         self.openai_radio = QRadioButton("OpenAI API")
         api_selection_layout.addWidget(self.openai_radio)
@@ -122,6 +211,8 @@ class SettingsDialog(QDialog):
         # 共通モデル設定
         model_settings_group = QGroupBox("モデル設定")
         model_settings_layout = QVBoxLayout(model_settings_group)
+        model_settings_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
+        model_settings_layout.setSpacing(10) # ウィジェット間のスペースを調整
 
         model_label = QLabel("モデル名:")
         self.model_edit = QLineEdit()
@@ -148,6 +239,8 @@ class SettingsDialog(QDialog):
         # 翻訳先言語設定
         target_lang_group = QGroupBox("翻訳先言語")
         target_lang_layout = QVBoxLayout(target_lang_group)
+        target_lang_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
+        target_lang_layout.setSpacing(10) # ウィジェット間のスペースを調整
         
         self.target_language_combo = QComboBox()
         self.target_language_combo.addItem("日本語", "ja")
@@ -171,11 +264,24 @@ class SettingsDialog(QDialog):
         # 起動設定
         startup_group = QGroupBox("起動設定")
         startup_layout = QVBoxLayout(startup_group)
+        startup_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
+        startup_layout.setSpacing(10) # ウィジェット間のスペースを調整
         
         self.start_minimized_checkbox = QCheckBox("最小化状態で起動")
         startup_layout.addWidget(self.start_minimized_checkbox)
         
         general_layout.addWidget(startup_group)
+
+        # OCR/翻訳設定
+        ocr_translation_group = QGroupBox("OCR/翻訳設定")
+        ocr_translation_layout = QVBoxLayout(ocr_translation_group)
+        ocr_translation_layout.setContentsMargins(10, 20, 10, 10)
+        ocr_translation_layout.setSpacing(10)
+
+        self.transcribe_original_text_checkbox = QCheckBox("原文を文字起こしする (一括翻訳を無効化)")
+        ocr_translation_layout.addWidget(self.transcribe_original_text_checkbox)
+        
+        general_layout.addWidget(ocr_translation_group) # 追加
         general_layout.addStretch()
         
         self.tab_widget.addTab(general_tab, "一般設定")
@@ -211,6 +317,9 @@ class SettingsDialog(QDialog):
         # 一般設定
         start_minimized = self.settings_manager.get_setting('ui', 'start_minimized', False)
         self.start_minimized_checkbox.setChecked(start_minimized)
+
+        transcribe_original_text = self.settings_manager.get_transcribe_original_text() # 追加
+        self.transcribe_original_text_checkbox.setChecked(transcribe_original_text) # 追加
     
     def _save_settings(self):
         """UIの設定を保存"""
@@ -235,6 +344,9 @@ class SettingsDialog(QDialog):
             # 一般設定
             start_minimized = self.start_minimized_checkbox.isChecked()
             self.settings_manager.set_setting('ui', 'start_minimized', start_minimized)
+
+            transcribe_original_text = self.transcribe_original_text_checkbox.isChecked() # 追加
+            self.settings_manager.set_transcribe_original_text(transcribe_original_text) # 追加
             
             # 設定を保存
             if self.settings_manager.save_settings():
@@ -248,5 +360,20 @@ class SettingsDialog(QDialog):
     
     def _verify_api_keys(self):
         """APIキーの検証"""
-        # TODO: 実際のAPI検証を実装
-        QMessageBox.information(self, "APIキー検証", "APIキー検証機能は実装中です")
+        selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'
+        
+        if selected_api == 'openai':
+            api_key = self.openai_api_key_edit.text()
+            translator_service = self.translation_manager.get_translator_service('openai')
+        else: # gemini
+            api_key = self.gemini_api_key_edit.text()
+            translator_service = self.translation_manager.get_translator_service('gemini')
+        
+        if translator_service:
+            is_valid, message = translator_service.verify_api_key(api_key)
+            if is_valid:
+                QMessageBox.information(self, "APIキー検証", "APIキーは有効です。")
+            else:
+                QMessageBox.warning(self, "APIキー検証", f"APIキーが無効です: {message}")
+        else:
+            QMessageBox.critical(self, "エラー", "選択されたAPIの翻訳サービスが見つかりません。")

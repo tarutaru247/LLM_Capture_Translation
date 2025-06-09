@@ -5,7 +5,7 @@ import sys
 import logging
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QPushButton, QLabel, QTextEdit, QComboBox, 
-                            QAction, QMenu, QToolBar, QStatusBar, QMessageBox)
+                            QAction, QMenu, QToolBar, QStatusBar, QMessageBox, QApplication)
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon, QPixmap
 
@@ -54,6 +54,53 @@ class MainWindow(QMainWindow):
         # ウィンドウの基本設定
         self.setWindowTitle("OCR翻訳ツール")
         self.setMinimumSize(800, 600)
+
+        # スタイルシートの適用
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f0f0;
+            }
+            QLabel {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                color: #333333;
+            }
+            QPushButton {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                background-color: #4CAF50;
+                color: white;
+                border-radius: 5px;
+                padding: 10px 20px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QTextEdit {
+                font-family: "Yu Gothic UI", "Meiryo UI", monospace;
+                font-size: 14px;
+                border: 1px solid #cccccc;
+                border-radius: 5px;
+                padding: 5px;
+                background-color: white;
+            }
+            QComboBox {
+                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
+                font-size: 14px;
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                padding: 5px;
+                background-color: white;
+            }
+            QToolBar {
+                background-color: #e0e0e0;
+                spacing: 10px;
+            }
+            QStatusBar {
+                background-color: #e0e0e0;
+                color: #333333;
+            }
+        """)
         
         # メニューバーの設定
         self._create_menu_bar()
@@ -74,7 +121,8 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         
         # キャプチャボタン
-        capture_button = QPushButton("画面範囲をキャプチャ")
+        capture_button = QPushButton(QIcon("icons/capture.png"), "画面範囲をキャプチャ")
+        capture_button.setIconSize(QSize(24, 24))
         capture_button.setMinimumHeight(40)
         capture_button.clicked.connect(self._on_capture_button_clicked)
         main_layout.addWidget(capture_button)
@@ -137,6 +185,13 @@ class MainWindow(QMainWindow):
         result_layout.addLayout(translation_layout)
         
         main_layout.addLayout(result_layout)
+
+        # 進捗表示用のラベル
+        self.progress_label = QLabel("処理中...")
+        self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.setStyleSheet("font-size: 18px; color: #007bff; font-weight: bold;")
+        self.progress_label.hide() # 初期状態では非表示
+        main_layout.addWidget(self.progress_label)
     
     def _create_menu_bar(self):
         """メニューバーの作成"""
@@ -145,25 +200,25 @@ class MainWindow(QMainWindow):
         # ファイルメニュー
         file_menu = menu_bar.addMenu("ファイル")
         
-        exit_action = QAction("終了", self)
+        exit_action = QAction(QIcon("icons/exit.png"), "終了", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
         # 設定メニュー
         settings_menu = menu_bar.addMenu("設定")
         
-        api_settings_action = QAction("API設定", self)
+        api_settings_action = QAction(QIcon("icons/settings.png"), "API設定", self)
         api_settings_action.triggered.connect(self._show_settings_dialog)
         settings_menu.addAction(api_settings_action)
         
         # ヘルプメニュー
         help_menu = menu_bar.addMenu("ヘルプ")
         
-        about_action = QAction("バージョン情報", self)
+        about_action = QAction(QIcon("icons/info.png"), "バージョン情報", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
         
-        usage_action = QAction("使い方", self)
+        usage_action = QAction(QIcon("icons/help.png"), "使い方", self)
         usage_action.triggered.connect(self._show_usage_dialog)
         help_menu.addAction(usage_action)
     
@@ -174,12 +229,12 @@ class MainWindow(QMainWindow):
         self.addToolBar(tool_bar)
         
         # キャプチャボタン
-        capture_action = QAction("キャプチャ", self)
+        capture_action = QAction(QIcon("icons/capture.png"), "キャプチャ", self)
         capture_action.triggered.connect(self._on_capture_button_clicked)
         tool_bar.addAction(capture_action)
         
         # 設定ボタン
-        settings_action = QAction("設定", self)
+        settings_action = QAction(QIcon("icons/settings.png"), "設定", self)
         settings_action.triggered.connect(self._show_settings_dialog)
         tool_bar.addAction(settings_action)
     
@@ -192,95 +247,86 @@ class MainWindow(QMainWindow):
         """キャプチャ完了時の処理"""
         if pixmap:
             self.captured_pixmap = pixmap
-            self.status_bar.showMessage("キャプチャ完了、OCR処理中...")
+            self.status_bar.showMessage("キャプチャ完了、処理中...")
+            self.progress_label.setText("処理中...")
+            self.progress_label.show()
             
-            # OCR処理を実行
-            self._process_ocr()
-            
-            # OCR処理が成功し、テキストが抽出された場合は翻訳を実行
-            if self.extracted_text:
-                self._translate_text()
-            
-            self.status_bar.showMessage("処理完了")
-    
-    def _process_ocr(self):
-        """OCR処理を実行"""
-        try:
-            if not self.captured_pixmap or self.captured_pixmap.isNull():
-                self.status_bar.showMessage("有効な画像がありません")
-                return
-            
-            self.status_bar.showMessage("Vision OCR処理中...")
-            
-            # OCR処理の実行
-            # VisionOCRServiceは内部で言語ヒントを処理するため、ここではlangを渡さない
-            extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
-            
-            if extracted_text and not extracted_text.startswith("エラー:"):
-                self.extracted_text = extracted_text
-                self.original_text_edit.setText(extracted_text)
+            self.original_text_edit.clear()
+            self.translation_text_edit.clear()
+
+            target_lang = self._get_selected_target_language()
+            transcribe_original = self.settings_manager.get_transcribe_original_text()
+
+            if transcribe_original:
+                # 旧フロー: OCR -> 翻訳 (2回のAPI呼び出し)
+                self.status_bar.showMessage("OCR処理中...")
+                self.progress_label.setText("OCR処理中...")
                 
-                logger.info(f"Vision OCR処理完了（{len(extracted_text)}文字）")
-                self.status_bar.showMessage(f"Vision OCR処理完了")
-            else:
-                self.status_bar.showMessage(f"テキストを抽出できませんでした: {extracted_text}")
-                self.original_text_edit.setText(f"テキストを抽出できませんでした。別の範囲を選択してください。\nエラー: {extracted_text}")
-        
-        except Exception as e:
-            error_msg = f"Vision OCR処理中にエラーが発生しました: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            self.status_bar.showMessage(error_msg)
-            self.original_text_edit.setText(f"エラー: {error_msg}")
-        pass
-    
-    def _translate_text(self):
-        """テキスト翻訳を実行"""
-        try:
-            if not self.extracted_text:
-                self.status_bar.showMessage("翻訳するテキストがありません")
-                return
-            
-            self.status_bar.showMessage("翻訳処理中...")
-            
-            # 翻訳先言語の取得
-            target_lang = None
-            lang_index = self.language_combo.currentIndex()
-            if lang_index == 0:
-                target_lang = 'ja'  # 日本語
-            elif lang_index == 1:
-                target_lang = 'en'  # 英語
-            elif lang_index == 2:
-                target_lang = 'zh'  # 中国語
-            elif lang_index == 3:
-                target_lang = 'ko'  # 韓国語
-            elif lang_index == 4:
-                target_lang = 'fr'  # フランス語
-            elif lang_index == 5:
-                target_lang = 'de'  # ドイツ語
-            
-            # 翻訳の実行
-            translated_text = self.translation_manager.translate(
-                self.extracted_text, 
-                target_lang=target_lang
-            )
-            
-            if translated_text:
-                self.translated_text = translated_text
-                self.translation_text_edit.setText(translated_text)
+                extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
                 
-                # 使用したAPIの情報を表示
-                selected_api = self.settings_manager.get_selected_api()
-                self.status_bar.showMessage(f"翻訳完了 (使用API: {selected_api.upper()})")
+                if extracted_text and not extracted_text.startswith("エラー:"):
+                    self.extracted_text = extracted_text
+                    self.original_text_edit.setText(extracted_text)
+                    logger.info(f"Vision OCR処理完了（{len(extracted_text)}文字）")
+                    self.status_bar.showMessage(f"Vision OCR処理完了、翻訳中...")
+                    self.progress_label.setText("翻訳処理中...")
+
+                    translated_text = self.translation_manager.translate(
+                        self.extracted_text, 
+                        target_lang=target_lang
+                    )
+                    
+                    if translated_text:
+                        self.translated_text = translated_text
+                        self.translation_text_edit.setText(translated_text)
+                        selected_api = self.settings_manager.get_selected_api()
+                        self.status_bar.showMessage(f"処理完了 (使用API: {selected_api.upper()})")
+                    else:
+                        self.status_bar.showMessage("翻訳に失敗しました")
+                        self.translation_text_edit.setText("翻訳に失敗しました。APIキーが正しく設定されているか確認してください。")
+                else:
+                    self.status_bar.showMessage(f"テキストを抽出できませんでした: {extracted_text}")
+                    self.original_text_edit.setText(f"テキストを抽出できませんでした。別の範囲を選択してください。\nエラー: {extracted_text}")
             else:
-                self.status_bar.showMessage("翻訳に失敗しました")
-                self.translation_text_edit.setText("翻訳に失敗しました。APIキーが正しく設定されているか確認してください。")
-        
-        except Exception as e:
-            error_msg = f"翻訳処理中にエラーが発生しました: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            self.status_bar.showMessage(error_msg)
-            self.translation_text_edit.setText(f"エラー: {error_msg}")
-        pass
+                # 新フロー: OCR + 翻訳 (1回のAPI呼び出し)
+                self.status_bar.showMessage("一括翻訳処理中...")
+                self.progress_label.setText("一括翻訳処理中...")
+
+                translated_text = self.translation_manager.translate_image(
+                    self.captured_pixmap,
+                    target_lang=target_lang
+                )
+
+                if translated_text and not translated_text.startswith("エラー:"):
+                    self.translated_text = translated_text
+                    self.translation_text_edit.setText(translated_text)
+                    self.original_text_edit.setText("（一括翻訳モードのため原文は表示されません）") # 原文は表示しない
+                    selected_api = self.settings_manager.get_selected_api()
+                    self.status_bar.showMessage(f"処理完了 (使用API: {selected_api.upper()} Vision 一括翻訳)")
+                else:
+                    self.status_bar.showMessage(f"一括翻訳に失敗しました: {translated_text}")
+                    self.translation_text_edit.setText(f"一括翻訳に失敗しました。APIキーが正しく設定されているか確認してください。\nエラー: {translated_text}")
+                    # エラー時は旧フローにフォールバックするオプションも検討可能だが、今回はシンプルにエラー表示
+            
+            self.progress_label.hide()
+    
+    def _get_selected_target_language(self) -> str:
+        """選択されている翻訳先言語コードを取得するヘルパーメソッド"""
+        lang_index = self.language_combo.currentIndex()
+        if lang_index == 0: return 'ja'
+        elif lang_index == 1: return 'en'
+        elif lang_index == 2: return 'zh'
+        elif lang_index == 3: return 'ko'
+        elif lang_index == 4: return 'fr'
+        elif lang_index == 5: return 'de'
+        return 'ja' # デフォルト
+
+    # _process_ocr と _translate_text は _on_capture_complete に統合されたため削除
+    # def _process_ocr(self):
+    #     pass
+
+    # def _translate_text(self):
+    #     pass
     
     def _copy_original_text(self):
         """原文テキストをクリップボードにコピー"""

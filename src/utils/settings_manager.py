@@ -31,7 +31,8 @@ class SettingsManager:
             },
             'ui': {
                 'theme': 'system',
-                'start_minimized': False
+                'start_minimized': False,
+                'transcribe_original_text': False # 新しい設定項目を追加
             }
         }
         
@@ -137,3 +138,11 @@ class SettingsManager:
     def set_timeout(self, timeout):
         """APIのタイムアウト値を設定する"""
         return self.set_setting('api', 'timeout', timeout)
+
+    def get_transcribe_original_text(self) -> bool:
+        """原文を文字起こしする設定を取得する"""
+        return self.get_setting('ui', 'transcribe_original_text', False)
+
+    def set_transcribe_original_text(self, value: bool):
+        """原文を文字起こしする設定を設定する"""
+        return self.set_setting('ui', 'transcribe_original_text', value)

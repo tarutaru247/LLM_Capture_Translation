@@ -82,3 +82,32 @@ class GeminiTranslator(TranslatorService):
             bool: 利用可能な場合はTrue、そうでない場合はFalse
         """
         return bool(self.api_key)
+
+    def verify_api_key(self, api_key):
+        """提供されたAPIキーがGoogle Gemini APIで有効かどうかを検証する
+
+        Args:
+            api_key (str): 検証するAPIキー
+
+        Returns:
+            bool: 有効な場合はTrue、そうでない場合はFalse
+            str: エラーメッセージ（有効な場合は空文字列）
+        """
+        if not api_key:
+            return False, "APIキーが入力されていません。"
+        
+        try:
+            genai.configure(api_key=api_key)
+            # 認証をテストするために簡単なテキスト生成を試みる
+            # タイムアウトを5秒に設定
+            model = genai.GenerativeModel('gemini-pro') # 検証用のモデル
+            model.generate_content("test", timeout=5) 
+            logger.info("Google Gemini APIキーの検証に成功しました。")
+            return True, ""
+        except Exception as e:
+            error_msg = f"Google Gemini APIキーの検証中にエラーが発生しました: {e}"
+            logger.error(error_msg)
+            # タイムアウトエラーの場合、より具体的なメッセージを返す
+            if "timeout" in str(e).lower():
+                return False, f"APIへの接続エラー: {e} (タイムアウトの可能性あり)"
+            return False, error_msg
