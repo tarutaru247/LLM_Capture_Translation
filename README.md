@@ -25,7 +25,7 @@
 ### ユーザー向け
 
 1.  **実行ファイルのダウンロード**:
-    [リリースページ](https://github.com/your-account/your-repo/releases)から最新の `.exe` ファイルをダウンロードします。
+    [リリースページ](https://github.com/tarutaru247/LLM_Capture_Translation/releases)から最新の `.exe` ファイルをダウンロードします。
 2.  **起動**:
     ダウンロードした `.exe` ファイルをダブルクリックしてアプリケーションを起動します。
 3.  **初期設定**:
@@ -97,4 +97,4 @@ python build_exe.py
 
 ## ライセンス
 
-This project is under the MIT License.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
