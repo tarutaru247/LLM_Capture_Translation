@@ -30,9 +30,9 @@
 3.  使用したいAIのAPIキーを入力します。
     - **OpenAI APIキー**: [OpenAIの公式サイト](https://platform.openai.com/api-keys) から取得できます。
     - **Google Gemini APIキー**: [Google AI Studio](https://makersuite.google.com/app/apikey) から取得できます。
-4.  使用するAPI（OpenAIまたはGemini）をラジオボタンで選択します。
+4.  使用するAPI（OpenAIまたはGemini）をラジオボタンで選択します。(推奨:`gemini-2.0-flash-lite`)
 5.  **（推奨）** `APIキーを検証` ボタンをクリックして、キーが有効か確認します。
-6.  **（任意）** `モデル設定` で、使用するモデル名 (例: `gpt-4o`, `gemini-1.5-flash`) やAPIのタイムアウト時間（秒）をカスタマイズできます。
+6.  **（任意）** `モデル設定` で、使用するモデル名 (例: `gpt-4o`, `gemini-2.5-flash`) やAPIのタイムアウト時間（秒）をカスタマイズできます。
 7.  `言語設定` タブで、デフォルトの翻訳先言語を選択します。
 8.  `保存` ボタンをクリックして設定を保存します。
 

@@ -9,7 +9,12 @@ settings.json
 # 開発環境用スクリプト
 install-pyenv-win.ps1
 
-Windows 10/
+# エディタ・OS固有ファイル
+.vscode/
+.idea/
+*.log
+Thumbs.db
+.DS_Store
 
 docs/
 todo.md

@@ -39,8 +39,10 @@ def create_executable():
     
     # PyInstallerコマンドの構築
     pyinstaller_cmd = [
-        "pyinstaller",
-        "--name=OCR翻訳ツール",
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--name=キャプチャAI翻訳くん",
         "--windowed",  # GUIアプリケーション
         "--onefile",   # 単一の実行ファイル
         "--icon=resources/icon.ico",  # アイコン（存在する場合）
