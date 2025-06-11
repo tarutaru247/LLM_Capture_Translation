@@ -1,98 +1,100 @@
-# 範囲選択型OCR・AI翻訳ツール - README
+# キャプチャAI翻訳くん
 
-## プロジェクト概要
+![キャプチャAI翻訳くん](https://user-images.githubusercontent.com/your-account/your-repo/your-image.png)  <!-- TODO: Add a screenshot of the application -->
 
-このプロジェクトは、Windows デスクトップ上で選択した範囲の画像をキャプチャし、OCRで文字を抽出して、OpenAI APIまたはGemini APIを使用して翻訳するデスクトップアプリケーションです。
+「キャプチャAI翻訳くん」は、PC画面上の任意の範囲をキャプチャし、写っている文字をAIが認識して翻訳するWindows向けアプリケーションです。
+最新のAIモデル（OpenAI APIまたはGoogle Gemini API）を活用し、高精度なOCRと翻訳を実現します。
+
+## 主な機能
+
+- **範囲選択キャプチャ**: マウスでドラッグするだけで、必要な部分だけを簡単にキャプチャできます。
+- **AIによるOCR・翻訳**:
+    - **一括翻訳モード (デフォルト)**: キャプチャした画像から直接翻訳結果を生成します。API呼び出しが1回で済むため、高速かつ効率的です。
+    - **文字起こしモード**: 画像から抽出した原文を確認してから、翻訳結果を見ることができます。原文のコピーも可能です。
+- **マルチAPI対応**: OpenAI (GPTシリーズ) と Google (Geminiシリーズ) のAPIを切り替えて使用できます。
+- **多言語対応**: 日本語、英語、中国語、韓国語、フランス語、ドイツ語への翻訳に対応しています。
+- **カスタマイズ可能な設定**: 使用するAIモデル名やAPIのタイムアウト時間など、詳細な設定が可能です。
+
+## 動作環境
+
+- Windows 10 / 11
+- インターネット接続
+
+## インストールと使い方
+
+### ユーザー向け
+
+1.  **実行ファイルのダウンロード**:
+    [リリースページ](https://github.com/your-account/your-repo/releases)から最新の `.exe` ファイルをダウンロードします。
+2.  **起動**:
+    ダウンロードした `.exe` ファイルをダブルクリックしてアプリケーションを起動します。
+3.  **初期設定**:
+    初回起動時にAPIキーの設定が必要です。詳しい手順は以下の使用方法ガイドをご覧ください。
+
+**詳細な使用方法については、こちらのガイドを参照してください。**
+▶ [**使用方法ガイド**](./docs/範囲選択型OCR・AI翻訳ツール%20-%20使用方法ガイド.md)
+
+### 開発者向け
+
+#### 必要条件
+
+- Python 3.8以上
+- 必要なパッケージ:
+  ```
+  pip install -r requirements.txt
+  ```
+
+#### 実行方法
+
+```bash
+python main.py
+```
+
+#### ビルド方法
+
+実行ファイル（`.exe`）を作成するには、`build_exe.py` を実行します。
+
+```bash
+python build_exe.py
+```
+
+ビルドされた実行ファイルは `dist` ディレクトリに作成されます。
 
 ## ディレクトリ構成
 
 ```
-ocr_translator_project/
+.
 ├── main.py                     # アプリケーションのエントリーポイント
 ├── build_exe.py                # PyInstallerによるビルドスクリプト
-├── src/                        # ソースコードディレクトリ
-│   ├── __init__.py
-│   ├── ui/                     # UIモジュール
-│   │   ├── __init__.py
-│   │   ├── main_window.py      # メインウィンドウ
-│   │   ├── screen_capture.py   # 画面キャプチャ機能
-│   │   └── settings_dialog.py  # 設定ダイアログ
-│   ├── ocr/                    # OCRモジュール
-│   │   ├── __init__.py
-│   │   └── ocr_processor.py    # OCR処理
-│   ├── translator/             # 翻訳モジュール
-│   │   ├── __init__.py
-│   │   ├── translator_service.py  # 翻訳サービス抽象基底クラス
-│   │   ├── openai_translator.py   # OpenAI API翻訳
-│   │   ├── gemini_translator.py   # Gemini API翻訳
-│   │   └── translation_manager.py # 翻訳マネージャー
-│   └── utils/                  # ユーティリティモジュール
-│       ├── __init__.py
-│       ├── utils.py            # 共通ユーティリティ関数
-│       └── settings_manager.py # 設定管理
+├── requirements.txt            # 依存パッケージリスト
+├── README.md                   # このファイル
 ├── docs/                       # ドキュメント
-│   ├── user_guide.md           # ユーザーガイド
-│   └── technical_specification.md # 技術仕様書
-└── dist/                       # ビルド済み実行ファイル（ビルド後に作成）
-    └── OCR翻訳ツール.exe       # 実行ファイル
+│   └── 範囲選択型OCR・AI翻訳ツール - 使用方法ガイド.md
+└── src/                        # ソースコード
+    ├── ocr/
+    │   ├── ocr_service.py
+    │   └── vision_ocr_service.py
+    ├── translator/
+    │   ├── combined_vision_translator.py
+    │   ├── gemini_translator.py
+    │   ├── openai_translator.py
+    │   ├── translation_manager.py
+    │   └── translator_service.py
+    ├── ui/
+    │   ├── main_window.py
+    │   ├── screen_capture.py
+    │   └── settings_dialog.py
+    └── utils/
+        ├── settings_manager.py
+        └── utils.py
 ```
-
-## 必要条件
-
-- Python 3.8以上
-- PyQt5
-- pytesseract
-- Pillow
-- openai
-- google-generativeai
-- Tesseract OCR（外部依存）
-
-## インストール方法
-
-### 開発環境
-
-1. リポジトリをクローンまたはダウンロードします
-2. 必要なパッケージをインストールします：
-   ```
-   pip install -r requirements.txt
-   ```
-3. Tesseract OCRをインストールします：
-   - Windows: https://github.com/UB-Mannheim/tesse ract/wiki
-   - 日本語と英語の言語パックを選択してください
-
-### エンドユーザー向け
-
-1. 提供された実行ファイル（.exe）をダウンロードします
-2. Tesseract OCRをインストールします
-3. 実行ファイルをダブルクリックして起動します
-
-## 使用方法
-
-詳細な使用方法については、`user_guide.md`を参照してください。
-
-## ビルド方法
-
-実行ファイル（.exe）を作成するには：
-
-```
-python build_exe.py
-```
-
-ビルドされた実行ファイルは`dist`ディレクトリに作成されます。
-
-## 技術仕様
-
-詳細な技術仕様については、`technical_specification.md`を参照してください。
-
-## 検証
-
-アプリケーションの検証方法と検証項目については、`windows_validation_checklist.md`を参照してください。
-
-## ライセンス
-
-このプロジェクトは独自ライセンスの下で提供されています。詳細については、プロジェクト管理者にお問い合わせください。
 
 ## 注意事項
 
-- APIキーは個人情報として扱い、他人と共有しないでください
-- APIの使用には料金が発生する場合があります。各APIプロバイダの料金体系を確認してください
+- APIキーは他人に知られないよう、厳重に管理してください。
+- APIの利用には、各サービスプロバイダが定める料金が発生する場合があります。ご利用の際は料金体系を必ずご確認ください。
+- 本アプリケーションの使用によって生じたいかなる損害についても、開発者は責任を負いません。
+
+## ライセンス
+
+This project is under the MIT License.

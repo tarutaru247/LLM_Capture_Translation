@@ -3,8 +3,8 @@
 """
 import sys
 import logging
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                            QPushButton, QLabel, QTextEdit, QComboBox, 
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                            QPushButton, QLabel, QTextEdit, QComboBox,
                             QAction, QMenu, QToolBar, QStatusBar, QMessageBox, QApplication)
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon, QPixmap
@@ -52,7 +52,7 @@ class MainWindow(QMainWindow):
     def _init_ui(self):
         """UIの初期化"""
         # ウィンドウの基本設定
-        self.setWindowTitle("OCR翻訳ツール")
+        self.setWindowTitle("キャプチャAI翻訳くん")
         self.setMinimumSize(800, 600)
 
         # スタイルシートの適用
@@ -104,9 +104,6 @@ class MainWindow(QMainWindow):
         
         # メニューバーの設定
         self._create_menu_bar()
-        
-        # ツールバーの設定
-        self._create_tool_bar()
         
         # ステータスバーの設定
         self.status_bar = QStatusBar()
@@ -217,7 +214,7 @@ class MainWindow(QMainWindow):
         # 設定メニュー
         settings_menu = menu_bar.addMenu("設定")
         
-        api_settings_action = QAction(QIcon("icons/settings.png"), "API設定", self)
+        api_settings_action = QAction(QIcon("icons/settings.png"), "設定", self)
         api_settings_action.triggered.connect(self._show_settings_dialog)
         settings_menu.addAction(api_settings_action)
         
@@ -231,22 +228,6 @@ class MainWindow(QMainWindow):
         usage_action = QAction(QIcon("icons/help.png"), "使い方", self)
         usage_action.triggered.connect(self._show_usage_dialog)
         help_menu.addAction(usage_action)
-    
-    def _create_tool_bar(self):
-        """ツールバーの作成"""
-        tool_bar = QToolBar("メインツールバー")
-        tool_bar.setIconSize(QSize(32, 32))
-        self.addToolBar(tool_bar)
-        
-        # キャプチャボタン
-        capture_action = QAction(QIcon("icons/capture.png"), "キャプチャ", self)
-        capture_action.triggered.connect(self._on_capture_button_clicked)
-        tool_bar.addAction(capture_action)
-        
-        # 設定ボタン
-        settings_action = QAction(QIcon("icons/settings.png"), "設定", self)
-        settings_action.triggered.connect(self._show_settings_dialog)
-        tool_bar.addAction(settings_action)
     
     def _on_capture_button_clicked(self):
         """キャプチャボタンがクリックされたときの処理"""
