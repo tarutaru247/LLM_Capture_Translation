@@ -156,8 +156,10 @@ class MainWindow(QMainWindow):
         # 結果表示エリア
         result_layout = QHBoxLayout()
         
-        # 原文表示
-        original_layout = QVBoxLayout()
+        # 原文表示用のウィジェットを作成
+        self.original_widget = QWidget()
+        original_layout = QVBoxLayout(self.original_widget)
+        original_layout.setContentsMargins(0, 0, 0, 0) # ウィジェット間のマージンを調整
         original_layout.addWidget(QLabel("原文:"))
         
         self.original_text_edit = QTextEdit()
@@ -168,7 +170,7 @@ class MainWindow(QMainWindow):
         copy_original_button.clicked.connect(self._copy_original_text)
         original_layout.addWidget(copy_original_button)
         
-        result_layout.addLayout(original_layout)
+        result_layout.addWidget(self.original_widget)
         
         # 翻訳表示
         translation_layout = QVBoxLayout()
@@ -192,6 +194,14 @@ class MainWindow(QMainWindow):
         self.progress_label.setStyleSheet("font-size: 18px; color: #007bff; font-weight: bold;")
         self.progress_label.hide() # 初期状態では非表示
         main_layout.addWidget(self.progress_label)
+
+        # UIの表示状態を更新
+        self._update_ui_visibility()
+
+    def _update_ui_visibility(self):
+        """設定に基づいてUIの表示/非表示を切り替える"""
+        transcribe_original = self.settings_manager.get_transcribe_original_text()
+        self.original_widget.setVisible(transcribe_original)
     
     def _create_menu_bar(self):
         """メニューバーの作成"""
@@ -256,6 +266,11 @@ class MainWindow(QMainWindow):
 
             target_lang = self._get_selected_target_language()
             transcribe_original = self.settings_manager.get_transcribe_original_text()
+            
+            # UIの表示状態を更新
+            self._update_ui_visibility()
+            
+            logger.info(f"transcribe_original (from settings_manager): {transcribe_original}")
 
             if transcribe_original:
                 # 旧フロー: OCR -> 翻訳 (2回のAPI呼び出し)
@@ -300,7 +315,6 @@ class MainWindow(QMainWindow):
                 if translated_text and not translated_text.startswith("エラー:"):
                     self.translated_text = translated_text
                     self.translation_text_edit.setText(translated_text)
-                    self.original_text_edit.setText("（一括翻訳モードのため原文は表示されません）") # 原文は表示しない
                     selected_api = self.settings_manager.get_selected_api()
                     self.status_bar.showMessage(f"処理完了 (使用API: {selected_api.upper()} Vision 一括翻訳)")
                 else:
@@ -344,7 +358,12 @@ class MainWindow(QMainWindow):
         """設定ダイアログを表示"""
         settings_dialog = SettingsDialog(self)
         if settings_dialog.exec_():
-            # 設定が保存された場合、UIを更新
+            # 設定が保存された場合、SettingsManagerの内部設定を再読み込みし、UIを更新
+            self.settings_manager.settings = self.settings_manager._load_settings() # 設定を再読み込み
+
+            # UIの表示状態を更新
+            self._update_ui_visibility()
+
             target_lang = self.settings_manager.get_target_language()
             lang_index = 0  # デフォルトは日本語
             
