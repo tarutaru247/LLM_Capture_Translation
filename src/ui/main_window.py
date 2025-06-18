@@ -365,8 +365,8 @@ class MainWindow(QMainWindow):
     def _show_about_dialog(self):
         """バージョン情報ダイアログを表示"""
         QMessageBox.about(self, "バージョン情報", 
-                         "OCR翻訳ツール v0.1.0\n"
-                         "© 2025 OCR Translator")
+                         "OCR翻訳ツール v0.0.1\n"
+                         "© 2025 tarutaru247")
     
     def _show_usage_dialog(self):
         """使い方ダイアログを表示"""
