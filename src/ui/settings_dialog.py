@@ -220,6 +220,10 @@ class SettingsDialog(QDialog):
         model_settings_layout.addWidget(model_label)
         model_settings_layout.addWidget(self.model_edit)
 
+        recommend_label = QLabel("推奨: gemini-2.5-flash-lite-preview-06-17")
+        recommend_label.setStyleSheet("font-size: 12px; color: #666666;")
+        model_settings_layout.addWidget(recommend_label)
+
         timeout_label = QLabel("APIタイムアウト (秒):")
         self.timeout_edit = QLineEdit()
         self.timeout_edit.setPlaceholderText("例: 60")

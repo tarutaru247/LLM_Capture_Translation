@@ -23,7 +23,7 @@ class SettingsManager:
                 'selected_api': 'openai',  # 'openai' または 'gemini' (翻訳とOCRの両方で使用)
                 'openai_api_key': '',
                 'gemini_api_key': '',
-                'model': 'gemini-2.0-flash-lite', # 翻訳とOCR共通のモデル名
+                'model': 'gemini-2.5-flash-lite-preview-06-17', # 翻訳とOCR共通のモデル名
                 'timeout': 60 # APIタイムアウト (秒)
             },
             'language': {

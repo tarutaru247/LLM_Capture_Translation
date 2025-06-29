@@ -9,9 +9,10 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon, QPixmap
 
-from ..ui.screen_capture import ScreenCaptureManager
+from ..ui.screen_capture import ScreenCaptureWindow
 from ..utils.settings_manager import SettingsManager
 from ..ui.settings_dialog import SettingsDialog
+from ..ui.translation_overlay import TranslationOverlay
 from ..ocr.vision_ocr_service import VisionOCRService
 from ..translator.translation_manager import TranslationManager
 
@@ -26,8 +27,8 @@ class MainWindow(QMainWindow):
         # 設定マネージャーの初期化
         self.settings_manager = SettingsManager()
         
-        # スクリーンキャプチャマネージャーの初期化
-        self.capture_manager = ScreenCaptureManager(self)
+        # スクリーンキャプチャウィンドウ
+        self.capture_window = None
         
         # OCRサービス（Vision API）の初期化
         self.ocr_service = VisionOCRService()
@@ -43,6 +44,9 @@ class MainWindow(QMainWindow):
         
         # 翻訳されたテキスト
         self.translated_text = ""
+
+        # オーバーレイウィンドウ
+        self.overlay = None
         
         # UIの初期化
         self._init_ui()
@@ -229,81 +233,103 @@ class MainWindow(QMainWindow):
         usage_action.triggered.connect(self._show_usage_dialog)
         help_menu.addAction(usage_action)
     
+    def start_capture(self):
+        """領域選択キャプチャを開始する。ホットキーから呼び出されることを想定。"""
+        # 既にキャプチャウィンドウが開いている場合は何もしない
+        if self.capture_window and self.capture_window.isVisible():
+            return
+            
+        logger.info("領域選択キャプチャを開始します。")
+        self.status_bar.showMessage("画面の翻訳したい領域をドラッグで選択してください...")
+        
+        # キャプチャ中はメインウィンドウを非表示にする
+        self.hide()
+        # 少し待ってからキャプチャを開始しないと、非表示処理が間に合わず、
+        # メインウィンドウ自身がスクリーンショットに写り込んでしまう
+        QApplication.processEvents()
+        
+        self.capture_window = ScreenCaptureWindow()
+        self.capture_window.region_selected.connect(self._on_capture_complete)
+        # ウィンドウが閉じたときにメインウィンドウを再表示するための接続
+        self.capture_window.destroyed.connect(self.show)
+        self.capture_window.show()
+
     def _on_capture_button_clicked(self):
         """キャプチャボタンがクリックされたときの処理"""
-        self.status_bar.showMessage("範囲を選択してください...")
-        self.capture_manager.start_capture(self._on_capture_complete)
+        self.start_capture()
     
-    def _on_capture_complete(self, pixmap):
+    def _on_capture_complete(self, pixmap: QPixmap):
         """キャプチャ完了時の処理"""
-        if pixmap:
-            self.captured_pixmap = pixmap
-            self.status_bar.showMessage("キャプチャ完了、処理中...")
-            self.progress_label.setText("処理中...")
-            self.progress_label.show()
-            
-            self.original_text_edit.clear()
-            self.translation_text_edit.clear()
+        # キャプチャがキャンセルされた（空のPixmapが来た）場合は何もしない
+        if not pixmap or pixmap.isNull():
+            logger.info("キャプチャがキャンセルまたは失敗しました。")
+            self.status_bar.showMessage("キャプチャがキャンセルされました", 3000)
+            # メインウィンドウを再表示
+            self.show()
+            return
 
-            target_lang = self._get_selected_target_language()
-            transcribe_original = self.settings_manager.get_transcribe_original_text()
-            
-            # UIの表示状態を更新
-            self._update_ui_visibility()
-            
-            logger.info(f"transcribe_original (from settings_manager): {transcribe_original}")
+        self.captured_pixmap = pixmap
+        self.status_bar.showMessage("キャプチャ完了、翻訳処理中...")
+        self.progress_label.setText("翻訳処理中...")
+        self.progress_label.show()
+        QApplication.processEvents() # UIの更新を即時反映
 
-            if transcribe_original:
-                # 旧フロー: OCR -> 翻訳 (2回のAPI呼び出し)
-                self.status_bar.showMessage("OCR処理中...")
-                self.progress_label.setText("OCR処理中...")
-                
-                extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
-                
-                if extracted_text and not extracted_text.startswith("エラー:"):
-                    self.extracted_text = extracted_text
-                    self.original_text_edit.setText(extracted_text)
-                    logger.info(f"Vision OCR処理完了（{len(extracted_text)}文字）")
-                    self.status_bar.showMessage(f"Vision OCR処理完了、翻訳中...")
-                    self.progress_label.setText("翻訳処理中...")
+        # --- 翻訳処理 ---
+        target_lang = self._get_selected_target_language()
+        transcribe_original = self.settings_manager.get_transcribe_original_text()
+        self._update_ui_visibility()
 
-                    translated_text = self.translation_manager.translate(
-                        self.extracted_text, 
-                        target_lang=target_lang
-                    )
-                    
-                    if translated_text:
-                        self.translated_text = translated_text
-                        self.translation_text_edit.setText(translated_text)
-                        selected_api = self.settings_manager.get_selected_api()
-                        self.status_bar.showMessage(f"処理完了 (使用API: {selected_api.upper()})")
-                    else:
-                        self.status_bar.showMessage("翻訳に失敗しました")
-                        self.translation_text_edit.setText("翻訳に失敗しました。APIキーが正しく設定されているか確認してください。")
-                else:
-                    self.status_bar.showMessage(f"テキストを抽出できませんでした: {extracted_text}")
-                    self.original_text_edit.setText(f"テキストを抽出できませんでした。別の範囲を選択してください。\nエラー: {extracted_text}")
+        translated_text = None
+        error_message = None
+
+        if transcribe_original:
+            # フロー1: OCR -> 翻訳
+            extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
+            if extracted_text and not extracted_text.startswith("エラー:"):
+                self.extracted_text = extracted_text
+                self.original_text_edit.setText(extracted_text)
+                translated_text = self.translation_manager.translate(extracted_text, target_lang)
             else:
-                # 新フロー: OCR + 翻訳 (1回のAPI呼び出し)
-                self.status_bar.showMessage("一括翻訳処理中...")
-                self.progress_label.setText("一括翻訳処理中...")
+                error_message = extracted_text or "テキストの抽出に失敗しました。"
+        else:
+            # フロー2: 画像から直接翻訳
+            translated_text = self.translation_manager.translate_image(self.captured_pixmap, target_lang)
 
-                translated_text = self.translation_manager.translate_image(
-                    self.captured_pixmap,
-                    target_lang=target_lang
-                )
+        # --- 処理結果の表示 ---
+        self.progress_label.hide()
+        self.show() # メインウィンドウを再表示
 
-                if translated_text and not translated_text.startswith("エラー:"):
-                    self.translated_text = translated_text
-                    self.translation_text_edit.setText(translated_text)
-                    selected_api = self.settings_manager.get_selected_api()
-                    self.status_bar.showMessage(f"処理完了 (使用API: {selected_api.upper()} Vision 一括翻訳)")
-                else:
-                    self.status_bar.showMessage(f"一括翻訳に失敗しました: {translated_text}")
-                    self.translation_text_edit.setText(f"一括翻訳に失敗しました。APIキーが正しく設定されているか確認してください。\nエラー: {translated_text}")
-                    # エラー時は旧フローにフォールバックするオプションも検討可能だが、今回はシンプルにエラー表示
+        if translated_text and not translated_text.startswith("エラー:"):
+            self.translated_text = translated_text
+            self.translation_text_edit.setText(translated_text)
+            api_info = f"(API: {self.settings_manager.get_selected_api().upper()})"
+            self.status_bar.showMessage(f"翻訳が完了しました。{api_info}", 5000)
+            logger.info("翻訳成功")
+
+            # --- オーバーレイ表示 ---
+            # 以前のオーバーレイが残っていれば閉じる
+            try:
+                if self.overlay and self.overlay.isVisible():
+                    self.overlay.close()
+            except RuntimeError:
+                # このブロックは、前のオーバーレイが自動的に閉じた後に新しい翻訳が実行された場合に正常に到達します
+                logger.info("古いオーバーレイは自動的に破棄済みのため、新しいオーバーレイを表示します。")
+                self.overlay = None # 参照をクリア
             
-            self.progress_label.hide()
+            # 表示位置を計算（キャプチャ領域の下中央）
+            capture_rect = self.capture_window.rubber_band.geometry()
+            pos_x = capture_rect.x() + (capture_rect.width() / 2) - 200 # overlay幅の半分を引く
+            pos_y = capture_rect.y() + capture_rect.height() + 10 # 10px下に表示
+
+            self.overlay = TranslationOverlay(translated_text, position=(int(pos_x), int(pos_y)))
+            self.overlay.show_and_fade_out()
+
+        else:
+            # エラー処理
+            final_error = error_message or translated_text or "不明なエラーが発生しました。"
+            self.status_bar.showMessage(f"エラー: {final_error}", 5000)
+            self.translation_text_edit.setText(f"翻訳に失敗しました。\n詳細: {final_error}")
+            logger.error(f"翻訳失敗: {final_error}")
     
     def _get_selected_target_language(self) -> str:
         """選択されている翻訳先言語コードを取得するヘルパーメソッド"""

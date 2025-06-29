@@ -62,7 +62,8 @@ class GeminiTranslator(TranslatorService):
             logger.info(f"Gemini APIを使用して翻訳を実行中... (対象言語: {target_language_name})")
             
             # Gemini APIを使用して翻訳
-            model = genai.GenerativeModel('gemini-2.0-flash-lite')
+            model_name = self.settings_manager.get_model()
+            model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             
             # 翻訳結果の取得
@@ -100,7 +101,8 @@ class GeminiTranslator(TranslatorService):
             genai.configure(api_key=api_key)
             # 認証をテストするために簡単なテキスト生成を試みる
             # タイムアウトを5秒に設定
-            model = genai.GenerativeModel('gemini-pro') # 検証用のモデル
+            model_name = self.settings_manager.get_model() or 'gemini-pro'
+            model = genai.GenerativeModel(model_name) # 検証用のモデル
             model.generate_content("test", timeout=5) 
             logger.info("Google Gemini APIキーの検証に成功しました。")
             return True, ""
