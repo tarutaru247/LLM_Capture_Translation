@@ -104,7 +104,7 @@ class CombinedVisionTranslator(TranslatorService):
 
             prompt_text = (
                 f"画像に写っているテキストを抽出し、{target_language_name} に翻訳してください。"
-                "抽出・翻訳後のテキストのみを改行を保って出力してください。余計な説明は不要です。"
+                "抽出・翻訳後のテキストのみを出力してください。余計な説明は不要です。"
             )
 
             response = client.chat.completions.create(
@@ -164,7 +164,7 @@ class CombinedVisionTranslator(TranslatorService):
 
             prompt_text = (
                 f"画像に写っているテキストを抽出し、{target_language_name} に翻訳してください。"
-                "抽出・翻訳後のテキストのみを改行を保って出力してください。余計な説明は不要です。"
+                "抽出・翻訳後のテキストのみを出力してください。余計な説明は不要です。"
             )
 
             response = model.generate_content([prompt_text, pil_image],
