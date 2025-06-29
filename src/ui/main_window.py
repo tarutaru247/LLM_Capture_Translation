@@ -3,6 +3,9 @@
 """
 import sys
 import logging
+import ctypes
+from ctypes import wintypes
+
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QLabel, QTextEdit, QComboBox,
                             QAction, QMenu, QToolBar, QStatusBar, QMessageBox, QApplication)
@@ -18,11 +21,21 @@ from ..translator.translation_manager import TranslationManager
 
 logger = logging.getLogger('ocr_translator')
 
+# --- Windows APIのための定数 ---
+# https://learn.microsoft.com/ja-jp/windows/win32/api/winuser/nf-winuser-registerhotkey
+MOD_CONTROL = 0x0002
+MOD_SHIFT = 0x0004
+VK_X = 0x58
+WM_HOTKEY = 0x0312
+
 class MainWindow(QMainWindow):
     """アプリケーションのメインウィンドウ"""
     
     def __init__(self):
         super().__init__()
+        
+        # --- ホットキーID ---
+        self.hotkey_id = 1 
         
         # 設定マネージャーの初期化
         self.settings_manager = SettingsManager()
@@ -50,6 +63,9 @@ class MainWindow(QMainWindow):
         
         # UIの初期化
         self._init_ui()
+        
+        # グローバルホットキーの登録
+        self._register_global_hotkey()
         
         logger.info("メインウィンドウを初期化しました")
     
@@ -112,7 +128,7 @@ class MainWindow(QMainWindow):
         # ステータスバーの設定
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("準備完了")
+        self.status_bar.showMessage("準備完了 (ホットキー: Ctrl+Shift+X)")
         
         # 中央ウィジェットの設定
         central_widget = QWidget()
@@ -397,13 +413,60 @@ class MainWindow(QMainWindow):
     def _show_usage_dialog(self):
         """使い方ダイアログを表示"""
         QMessageBox.information(self, "使い方",
-                               "1. 「キャプチャ」ボタンをクリックします\n"
-                               "2. 翻訳したいテキストの範囲を選択します\n"
-                               "3. 選択範囲からテキストが抽出され、翻訳されます\n"
-                               "4. 必要に応じて結果をコピーして利用できます")
-    
+                               "ホットキー(Ctrl+Shift+X)を押して、\n"
+                               "翻訳したいテキストの範囲を選択します。\n\n"
+                               "メインウィンドウのボタンからも実行できます。\n"
+                               "必要に応じて結果をコピーして利用できます")
+
+    def _register_global_hotkey(self):
+        """Windows APIを使用してグローバルホットキーを登録する"""
+        try:
+            # user32.dllをロード
+            user32 = ctypes.windll.user32
+            
+            # ウィンドウハンドルを取得
+            hwnd = self.winId()
+            
+            # ホットキーを登録
+            if not user32.RegisterHotKey(wintypes.HWND(int(hwnd)), self.hotkey_id, MOD_CONTROL | MOD_SHIFT, VK_X):
+                error_code = ctypes.GetLastError()
+                logger.error(f"グローバルホットキーの登録に失敗しました。エラーコード: {error_code}")
+                self.status_bar.showMessage("エラー: ホットキーの登録に失敗しました")
+            else:
+                logger.info(f"グローバルホットキー(Ctrl+Shift+X)をID {self.hotkey_id} で登録しました。")
+        except Exception as e:
+            logger.error(f"ホットキー登録中に予期せぬエラーが発生しました: {e}")
+            self.status_bar.showMessage("エラー: ホットキー登録中に例外が発生しました")
+
+    def _unregister_global_hotkey(self):
+        """登録したグローバルホットキーを解除する"""
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = self.winId()
+            user32.UnregisterHotKey(wintypes.HWND(int(hwnd)), self.hotkey_id)
+            logger.info("グローバルホットキーを解除しました。")
+        except Exception as e:
+            logger.error(f"ホットキー解除中にエラーが発生しました: {e}")
+
+    def nativeEvent(self, eventType, message):
+        """Windowsのネイティブイベントを処理する"""
+        # QPAプラグインからのイベントメッセージを処理
+        if eventType == b'windows_generic_MSG':
+            msg = wintypes.MSG.from_address(message.__int__())
+            if msg.message == WM_HOTKEY:
+                if msg.wParam == self.hotkey_id:
+                    logger.info("グローバルホットキーが検出されました！")
+                    self.start_capture()
+                    return True, 0 # イベントを処理したことを示す
+        
+        # 親クラスのnativeEventを呼び出す
+        return super().nativeEvent(eventType, message)
+
     def closeEvent(self, event):
         """ウィンドウが閉じられるときの処理"""
+        # ホットキーの解除
+        self._unregister_global_hotkey()
         # 設定を保存
         self.settings_manager.save_settings()
+        logger.info("アプリケーションを終了します。")
         event.accept()
