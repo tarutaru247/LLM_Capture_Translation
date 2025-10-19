@@ -1,8 +1,8 @@
-# キャプチャAI翻訳くん
+# キャプチャAI翻訳
 
-![キャプチャAI翻訳くん](https://user-images.githubusercontent.com/your-account/your-repo/your-image.png)  <!-- TODO: Add a screenshot of the application -->
+![キャプチャAI翻訳](https://user-images.githubusercontent.com/your-account/your-repo/your-image.png)  <!-- TODO: Add a screenshot of the application -->
 
-「キャプチャAI翻訳くん」は、PC画面上の任意の範囲をキャプチャし、写っている文字をAIが認識して翻訳するWindows向けアプリケーションです。
+「キャプチャAI翻訳」は、PC画面上の任意の範囲をキャプチャし、写っている文字をAIが認識して翻訳するWindows向けアプリケーションです。
 最新のAIモデル（OpenAI APIまたはGoogle Gemini API）を活用し、高精度なOCRと翻訳を実現します。
 
 ## 主な機能

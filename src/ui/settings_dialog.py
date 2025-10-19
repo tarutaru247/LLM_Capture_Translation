@@ -216,11 +216,11 @@ class SettingsDialog(QDialog):
 
         model_label = QLabel("モデル名:")
         self.model_edit = QLineEdit()
-        self.model_edit.setPlaceholderText("例: gemini-2.0-flash-lite, gpt-4o")
+        self.model_edit.setPlaceholderText("例: gemini-2.5-flash-latest, gpt-5-nano")
         model_settings_layout.addWidget(model_label)
         model_settings_layout.addWidget(self.model_edit)
 
-        recommend_label = QLabel("推奨: gemini-2.5-flash-lite-preview-06-17")
+        recommend_label = QLabel("推奨: gemini-flash-latest")
         recommend_label.setStyleSheet("font-size: 12px; color: #666666;")
         model_settings_layout.addWidget(recommend_label)
 
