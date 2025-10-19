@@ -35,7 +35,9 @@ class GeminiTranslator(TranslatorService):
 
         if not self._api_key:
             logger.error("Gemini APIキーが設定されていません")
-            return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください"
+            return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。"
+
+        model_name = self.settings_manager.get_model() or "gemini-pro"
 
         try:
             genai.configure(api_key=self._api_key)
@@ -61,7 +63,6 @@ class GeminiTranslator(TranslatorService):
 
             logger.info("Gemini APIによる翻訳を実行します（対象言語: %s）", target_language_name)
 
-            model_name = self.settings_manager.get_model() or "gemini-pro"
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt, request_options={"timeout": self.settings_manager.get_timeout()})
 
@@ -71,7 +72,7 @@ class GeminiTranslator(TranslatorService):
 
         except Exception as exc:
             error_msg = handle_exception(logger, exc, "Gemini APIでの翻訳")
-            return f"翻訳エラー: {error_msg}"
+            return f"エラー: {error_msg}"
 
     def is_available(self):
         """Gemini API が利用可能かどうかを確認する."""

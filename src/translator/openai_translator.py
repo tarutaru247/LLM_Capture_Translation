@@ -39,7 +39,9 @@ class OpenAITranslator(TranslatorService):
 
         if not self._api_key or not self.client:
             logger.error("OpenAI APIキーが設定されていません")
-            return "エラー: OpenAI APIキーが設定されていません。設定画面でAPIキーを設定してください"
+            return "エラー: OpenAI APIキーが設定されていません。設定画面でAPIキーを設定してください。"
+
+        model_name = self.settings_manager.get_model() or "gpt-4o-mini"
 
         try:
             if not target_lang:
@@ -64,7 +66,7 @@ class OpenAITranslator(TranslatorService):
             logger.info("OpenAI APIによる翻訳を実行します（対象言語: %s）", target_language_name)
 
             response = self.client.chat.completions.create(
-                model=self.settings_manager.get_model() or "gpt-4o-mini",
+                model=model_name,
                 messages=[
                     {
                         "role": "system",
@@ -86,13 +88,35 @@ class OpenAITranslator(TranslatorService):
             return "エラー: OpenAI APIキーが無効です。認証情報を確認してください。"
         except APIConnectionError as exc:
             logger.error("OpenAI APIへの接続に失敗しました: %s", exc)
-            return f"翻訳エラー: APIへの接続に失敗しました: {exc}"
+            return f"エラー: APIへの接続に失敗しました ({exc})."
         except APIStatusError as exc:
-            logger.error("OpenAI APIからエラーが返されました: %s - %s", exc.status_code, exc.response)
-            return f"翻訳エラー: APIエラーが発生しました: {exc.status_code} - {exc.response}"
+            error_detail = ""
+            try:
+                if exc.response is not None:
+                    payload = exc.response.json()
+                    error_detail = payload.get("error", {}).get("message") or exc.response.text
+            except Exception:
+                error_detail = exc.response.text if exc.response is not None else ""
+
+            logger.error(
+                "OpenAI APIからエラーが返されました: %s - %s - %s",
+                exc.status_code,
+                exc.response,
+                error_detail,
+            )
+            if error_detail:
+                detail_msg = error_detail
+                if "does not exist" in error_detail.lower() or "unsupported" in error_detail.lower():
+                    return (
+                        f"エラー: 指定したモデル '{model_name}' は利用できません。"
+                        "設定画面で有効なモデル名に変更してください。"
+                    )
+            else:
+                detail_msg = str(exc.response)
+            return f"エラー: OpenAI APIからエラー応答が返されました ({exc.status_code}): {detail_msg}"
         except Exception as exc:
             error_msg = handle_exception(logger, exc, "OpenAI APIでの翻訳")
-            return f"翻訳エラー: {error_msg}"
+            return f"エラー: {error_msg}"
 
     def is_available(self):
         """OpenAI API が利用可能かどうかを確認する."""
@@ -116,7 +140,16 @@ class OpenAITranslator(TranslatorService):
             logger.error("OpenAI APIへの接続に失敗しました: %s", exc)
             return False, f"APIへの接続エラー: {exc} (タイムアウトの可能性あり)"
         except APIStatusError as exc:
-            logger.error("OpenAI APIからエラーが返されました: %s - %s", exc.status_code, exc.response)
+            detail = ""
+            try:
+                if exc.response is not None:
+                    payload = exc.response.json()
+                    detail = payload.get("error", {}).get("message") or exc.response.text
+            except Exception:
+                detail = exc.response.text if exc.response is not None else ""
+            logger.error("OpenAI APIからエラーが返されました: %s - %s - %s", exc.status_code, exc.response, detail)
+            if detail:
+                return False, f"APIエラーが発生しました: {detail}"
             return False, f"APIエラーが発生しました: {exc.status_code} - {exc.response}"
         except Exception as exc:
             error_msg = f"OpenAI APIキーの検証中に予期しないエラーが発生しました: {exc}"
