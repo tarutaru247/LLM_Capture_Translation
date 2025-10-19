@@ -382,7 +382,7 @@ class MainWindow(QMainWindow):
         settings_dialog = SettingsDialog(self)
         if settings_dialog.exec_():
             # 設定が保存された場合、SettingsManagerの内部設定を再読み込みし、UIを更新
-            self.settings_manager.settings = self.settings_manager._load_settings() # 設定を再読み込み
+            self.settings_manager.reload_settings()  # 設定を再読み込み
 
             # UIの表示状態を更新
             self._update_ui_visibility()
