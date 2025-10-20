@@ -28,6 +28,9 @@ class SettingsManager:
                 "gemini_api_key": "",
                 "model": "gemini-flash-latest",  # default model for OCR/translation
                 "timeout": 60,  # API timeout in seconds
+                "reasoning_effort": "medium",
+                "verbosity": "medium",
+                "max_output_tokens": 1024,
             },
             "language": {
                 "target_language": "ja",  # default translation target
@@ -174,6 +177,30 @@ class SettingsManager:
     def set_timeout(self, timeout: int) -> bool:
         """Persist API timeout value."""
         return self.set_setting("api", "timeout", timeout)
+
+    def get_openai_reasoning_effort(self) -> str:
+        """Return configured reasoning effort for OpenAI GPT-5 models."""
+        return self.get_setting("api", "reasoning_effort", "medium")
+
+    def set_openai_reasoning_effort(self, effort: str) -> bool:
+        """Persist reasoning effort for OpenAI GPT-5 models."""
+        return self.set_setting("api", "reasoning_effort", effort)
+
+    def get_openai_verbosity(self) -> str:
+        """Return configured verbosity for OpenAI GPT-5 models."""
+        return self.get_setting("api", "verbosity", "medium")
+
+    def set_openai_verbosity(self, verbosity: str) -> bool:
+        """Persist verbosity for OpenAI GPT-5 models."""
+        return self.set_setting("api", "verbosity", verbosity)
+
+    def get_openai_max_output_tokens(self) -> int:
+        """Return configured max output tokens for OpenAI GPT-5 models."""
+        return self.get_setting("api", "max_output_tokens", 1024)
+
+    def set_openai_max_output_tokens(self, value: int) -> bool:
+        """Persist max output tokens for OpenAI GPT-5 models."""
+        return self.set_setting("api", "max_output_tokens", value)
 
     def get_transcribe_original_text(self) -> bool:
         """Return transcription flag."""

@@ -65,21 +65,11 @@ class OpenAITranslator(TranslatorService):
 
             logger.info("OpenAI APIによる翻訳を実行します（対象言語: %s）", target_language_name)
 
-            response = self.client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "あなたは翻訳アシスタントです。与えられたテキストを指定言語に翻訳してください。",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=1024,
-                timeout=self.settings_manager.get_timeout(),
-            )
+            if self._is_gpt5_model(model_name):
+                translated_text = self._translate_with_responses(prompt, model_name)
+            else:
+                translated_text = self._translate_with_chat(prompt, model_name)
 
-            translated_text = response.choices[0].message.content.strip()
             logger.info("翻訳が完了しました")
             return translated_text
 
@@ -117,6 +107,67 @@ class OpenAITranslator(TranslatorService):
         except Exception as exc:
             error_msg = handle_exception(logger, exc, "OpenAI APIでの翻訳")
             return f"エラー: {error_msg}"
+
+    def _translate_with_chat(self, prompt: str, model_name: str) -> str:
+        """既存のChat Completions APIで翻訳する."""
+        response = self.client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "あなたは翻訳アシスタントです。与えられたテキストを指定言語に翻訳してください。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1024,
+            timeout=self.settings_manager.get_timeout(),
+        )
+        return response.choices[0].message.content.strip()
+
+    def _translate_with_responses(self, prompt: str, model_name: str) -> str:
+        """GPT-5 系モデル向けに Responses API を利用して翻訳する."""
+        reasoning_effort = self.settings_manager.get_openai_reasoning_effort()
+        verbosity = self.settings_manager.get_openai_verbosity()
+        max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
+
+        request_body = {
+            "model": model_name,
+            "input": prompt,
+        }
+
+        if reasoning_effort:
+            request_body["reasoning"] = {"effort": reasoning_effort}
+        if verbosity:
+            request_body["text"] = {"verbosity": verbosity}
+        if max_output_tokens:
+            request_body["max_output_tokens"] = max_output_tokens
+
+        response = self.client.responses.create(
+            timeout=self.settings_manager.get_timeout(),
+            **request_body,
+        )
+
+        if getattr(response, "output_text", None):
+            return response.output_text.strip()
+
+        # Fallback: extract first text segment manually
+        try:
+            for item in response.output:
+                if item.type == "message":
+                    for content_part in getattr(item, "content", []):
+                        if content_part.type == "output_text":
+                            text_value = getattr(content_part, "text", "")
+                            if text_value:
+                                return text_value.strip()
+        except AttributeError:
+            pass
+
+        raise RuntimeError("GPT-5 応答から翻訳結果を取得できませんでした。")
+
+    @staticmethod
+    def _is_gpt5_model(model_name: str) -> bool:
+        return model_name.lower().startswith("gpt-5")
 
     def is_available(self):
         """OpenAI API が利用可能かどうかを確認する."""

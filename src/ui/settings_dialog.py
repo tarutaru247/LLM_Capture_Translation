@@ -231,6 +231,30 @@ class SettingsDialog(QDialog):
         model_settings_layout.addWidget(timeout_label)
         model_settings_layout.addWidget(self.timeout_edit)
 
+        reasoning_label = QLabel("GPT-5 推論モード:")
+        self.reasoning_combo = QComboBox()
+        self.reasoning_combo.addItem("最小", "minimal")
+        self.reasoning_combo.addItem("低", "low")
+        self.reasoning_combo.addItem("中 (推奨)", "medium")
+        self.reasoning_combo.addItem("高", "high")
+        model_settings_layout.addWidget(reasoning_label)
+        model_settings_layout.addWidget(self.reasoning_combo)
+
+        verbosity_label = QLabel("GPT-5 出力の詳細度:")
+        self.verbosity_combo = QComboBox()
+        self.verbosity_combo.addItem("低", "low")
+        self.verbosity_combo.addItem("中 (推奨)", "medium")
+        self.verbosity_combo.addItem("高", "high")
+        model_settings_layout.addWidget(verbosity_label)
+        model_settings_layout.addWidget(self.verbosity_combo)
+
+        max_tokens_label = QLabel("GPT-5 最大出力トークン:")
+        self.max_output_tokens_edit = QLineEdit()
+        self.max_output_tokens_edit.setPlaceholderText("例: 1024")
+        self.max_output_tokens_edit.setValidator(QIntValidator(1, 32768))
+        model_settings_layout.addWidget(max_tokens_label)
+        model_settings_layout.addWidget(self.max_output_tokens_edit)
+
         api_layout.addWidget(model_settings_group)
         
         self.tab_widget.addTab(api_tab, "API設定")
@@ -298,6 +322,9 @@ class SettingsDialog(QDialog):
         selected_api = self.settings_manager.get_selected_api()
         model = self.settings_manager.get_model()
         timeout = self.settings_manager.get_timeout()
+        reasoning_effort = self.settings_manager.get_openai_reasoning_effort()
+        verbosity = self.settings_manager.get_openai_verbosity()
+        max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
         
         self.openai_api_key_edit.setText(openai_api_key if openai_api_key else "")
         self.gemini_api_key_edit.setText(gemini_api_key if gemini_api_key else "")
@@ -309,6 +336,16 @@ class SettingsDialog(QDialog):
 
         self.model_edit.setText(model if model else "")
         self.timeout_edit.setText(str(timeout) if timeout else "")
+
+        reasoning_index = self.reasoning_combo.findData(reasoning_effort)
+        if reasoning_index >= 0:
+            self.reasoning_combo.setCurrentIndex(reasoning_index)
+
+        verbosity_index = self.verbosity_combo.findData(verbosity)
+        if verbosity_index >= 0:
+            self.verbosity_combo.setCurrentIndex(verbosity_index)
+
+        self.max_output_tokens_edit.setText(str(max_output_tokens) if max_output_tokens else "")
         
         # 言語設定
         target_language = self.settings_manager.get_target_language()
@@ -334,12 +371,19 @@ class SettingsDialog(QDialog):
             selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'
             model = self.model_edit.text()
             timeout = int(self.timeout_edit.text()) if self.timeout_edit.text().isdigit() else 60
+            reasoning_effort = self.reasoning_combo.currentData()
+            verbosity = self.verbosity_combo.currentData()
+            max_output_tokens_text = self.max_output_tokens_edit.text()
+            max_output_tokens = int(max_output_tokens_text) if max_output_tokens_text.isdigit() else 1024
             
             self.settings_manager.set_api_key('openai', openai_api_key)
             self.settings_manager.set_api_key('gemini', gemini_api_key)
             self.settings_manager.set_selected_api(selected_api)
             self.settings_manager.set_model(model)
             self.settings_manager.set_timeout(timeout)
+            self.settings_manager.set_openai_reasoning_effort(reasoning_effort)
+            self.settings_manager.set_openai_verbosity(verbosity)
+            self.settings_manager.set_openai_max_output_tokens(max_output_tokens)
             
             # 言語設定
             target_language = self.target_language_combo.currentData()
