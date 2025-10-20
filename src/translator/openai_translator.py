@@ -41,7 +41,11 @@ class OpenAITranslator(TranslatorService):
             logger.error("OpenAI APIキーが設定されていません")
             return "エラー: OpenAI APIキーが設定されていません。設定画面でAPIキーを設定してください。"
 
-        model_name = self.settings_manager.get_model() or "gpt-4o-mini"
+        configured_model = (self.settings_manager.get_model() or "gpt-5-nano").strip()
+        if not configured_model:
+            configured_model = "gpt-5-nano"
+        # Unicodeハイフン等をASCIIに正規化して判定用IDを作る
+        model_name = self._normalize_model_id(configured_model)
 
         try:
             if not target_lang:
@@ -63,7 +67,7 @@ class OpenAITranslator(TranslatorService):
                 f"{text}"
             )
 
-            logger.info("OpenAI APIによる翻訳を実行します（対象言語: %s）", target_language_name)
+            logger.info("OpenAI APIによる翻訳を実行します（対象言語: %s, モデル: %s）", target_language_name, configured_model)
 
             if self._is_gpt5_model(model_name):
                 translated_text = self._translate_with_responses(prompt, model_name)
@@ -98,7 +102,7 @@ class OpenAITranslator(TranslatorService):
                 detail_msg = error_detail
                 if "does not exist" in error_detail.lower() or "unsupported" in error_detail.lower():
                     return (
-                        f"エラー: 指定したモデル '{model_name}' は利用できません。"
+                        f"エラー: 指定したモデル '{configured_model}' は利用できません。"
                         "設定画面で有効なモデル名に変更してください。"
                     )
             else:
@@ -110,6 +114,9 @@ class OpenAITranslator(TranslatorService):
 
     def _translate_with_chat(self, prompt: str, model_name: str) -> str:
         """既存のChat Completions APIで翻訳する."""
+        # 安全ガード：万一ここに来ても GPT-5 系なら Responses へ誘導
+        if self._is_gpt5_model(model_name):
+            raise RuntimeError("gpt-5 系モデルは Chat Completions 非対応です。Responses API を使用してください。")
         response = self.client.chat.completions.create(
             model=model_name,
             messages=[
@@ -131,21 +138,48 @@ class OpenAITranslator(TranslatorService):
         verbosity = self.settings_manager.get_openai_verbosity()
         max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
 
-        request_body = {
+        verbosity_tips = {
+            "low": "Keep the translation as concise as possible.",
+            "medium": "Provide a natural translation without extra commentary.",
+            "high": "Include any nuances needed for an accurate translation, but avoid unrelated commentary.",
+        }
+        system_prompt = (
+            "You are a professional translation assistant. Translate any provided text into the requested language. "
+            "Output only the translation."
+        )
+        if verbosity in verbosity_tips:
+            system_prompt = f"{system_prompt} {verbosity_tips[verbosity]}"
+
+        # Responses API expects explicit content type metadata for each part.
+        request_params = {
             "model": model_name,
-            "input": prompt,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {"type": "text", "text": system_prompt},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": prompt},
+                    ],
+                },
+            ],
+            "temperature": 0.3,
         }
 
         if reasoning_effort:
-            request_body["reasoning"] = {"effort": reasoning_effort}
+            request_params["reasoning_effort"] = reasoning_effort
         if verbosity:
-            request_body["text"] = {"verbosity": verbosity}
-        if max_output_tokens:
-            request_body["max_output_tokens"] = max_output_tokens
+            request_params["verbosity"] = verbosity
+        if isinstance(max_output_tokens, int) and max_output_tokens > 0:
+            request_params["max_output_tokens"] = max_output_tokens
 
         response = self.client.responses.create(
             timeout=self.settings_manager.get_timeout(),
-            **request_body,
+            **request_params,
         )
 
         if getattr(response, "output_text", None):
@@ -167,7 +201,15 @@ class OpenAITranslator(TranslatorService):
 
     @staticmethod
     def _is_gpt5_model(model_name: str) -> bool:
-        return model_name.lower().startswith("gpt-5")
+        # gpt-5 / gpt-5 / gpt–5 / gpt＿5 / gpt 5 なども許容
+        import re
+        return bool(re.match(r'^gpt[\-\u2010-\u2015\u2212\uFE63\uFF0D_ ]?5', (model_name or '').lower()))
+
+    @staticmethod
+    def _normalize_model_id(model_name: str) -> str:
+        # 判定用に、よく混入する「ハイフンもどき」をASCIIの '-' に統一
+        table = dict.fromkeys(map(ord, "‐-‒–—−﹣－"), ord('-'))
+        return (model_name or "").translate(table).lower()
 
     def is_available(self):
         """OpenAI API が利用可能かどうかを確認する."""
