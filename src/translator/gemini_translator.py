@@ -37,7 +37,7 @@ class GeminiTranslator(TranslatorService):
             logger.error("Gemini APIキーが設定されていません")
             return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。"
 
-        model_name = self.settings_manager.get_model() or "gemini-pro"
+        model_name = self._resolve_model_name()
 
         try:
             genai.configure(api_key=self._api_key)
@@ -86,7 +86,7 @@ class GeminiTranslator(TranslatorService):
 
         try:
             genai.configure(api_key=api_key)
-            model_name = self.settings_manager.get_model() or "gemini-pro"
+            model_name = self._resolve_model_name()
             model = genai.GenerativeModel(model_name)
             model.generate_content("test", request_options={"timeout": 5})
             logger.info("Google Gemini APIキーの検証に成功しました。")
@@ -97,3 +97,15 @@ class GeminiTranslator(TranslatorService):
             if "timeout" in str(exc).lower():
                 return False, f"APIへの接続エラー: {exc} (タイムアウトの可能性あり)"
             return False, error_msg
+
+    def _resolve_model_name(self) -> str:
+        """Return a Gemini-compatible model name, falling back to default if necessary."""
+        configured_model = self.settings_manager.get_model()
+        if configured_model and configured_model.lower().startswith("gemini"):
+            return configured_model
+        # Fallback to a safe default Gemini model if the configured one is meant for OpenAI (e.g., GPT-5).
+        logger.warning(
+            "Geminiモデル以外 (%s) が設定されていたため、Geminiデフォルトモデルを使用します。",
+            configured_model,
+        )
+        return "gemini-pro"
