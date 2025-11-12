@@ -59,7 +59,7 @@ class OpenAITranslator(TranslatorService):
             return "エラー: OpenAI APIキーが設定されていません。設定画面でAPIキーを設定してください。"
 
         # 設定上のモデル名（空なら gpt-5-nano を既定）
-        configured_model = (self.settings_manager.get_model() or "gpt-5-nano").strip()
+        configured_model = (self.settings_manager.get_model_for_api("openai") or "gpt-5-nano").strip()
         model_name = self._normalize_model_id(configured_model)
 
         try:
@@ -104,53 +104,100 @@ class OpenAITranslator(TranslatorService):
             return f"エラー: {error_msg}"
 
     # ---------- 内部：Responses API ----------
-    def _translate_with_responses(self, prompt: str, model_name: str) -> str:
-
-        """Responses API を用いた翻訳実行（常用）"""
-
-        # 設定から取得するが、未対応のパラメータは送らない
-        max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
-        timeout = self.settings_manager.get_timeout()
-        temperature = getattr(self.settings_manager, "get_temperature", lambda: 0.3)()
-        if not supports_temperature(model_name):
-            temperature = None
-
-        reasoning_config = build_reasoning_config(self.settings_manager.get_openai_reasoning_effort())
-        text_config = build_text_config(self.settings_manager.get_openai_verbosity())
-
-        # system 相当の instructions に置き換え
-        system_prompt = (
-            "You are a professional translation assistant. Translate any provided text into the requested language. "
-            "Output only the translation."
-        )
-
-        responses_kwargs = {
-            "model": model_name,
-            "instructions": system_prompt,
-            "input": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": prompt},
-                    ],
-                }
-            ],
-            "max_output_tokens": (
-                max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else None
-            ),
-            "timeout": timeout,
-            "text": text_config,
-        }
-
-        if temperature is not None:
-            responses_kwargs["temperature"] = temperature
-        if reasoning_config:
-            responses_kwargs["reasoning"] = reasoning_config
-
-        resp = self.client.responses.create(**responses_kwargs)
-
-        return extract_output_text(resp)
-
+    def _translate_with_responses(self, prompt: str, model_name: str) -> str:
+
+
+
+        """Responses API を用いた翻訳実行（常用）"""
+
+
+
+        # 設定から取得するが、未対応のパラメータは送らない
+
+        max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
+
+        timeout = self.settings_manager.get_timeout()
+
+        temperature = getattr(self.settings_manager, "get_temperature", lambda: 0.3)()
+
+        if not supports_temperature(model_name):
+
+            temperature = None
+
+
+
+        reasoning_config = build_reasoning_config(self.settings_manager.get_openai_reasoning_effort())
+
+        text_config = build_text_config(self.settings_manager.get_openai_verbosity())
+
+
+
+        # system 相当の instructions に置き換え
+
+        system_prompt = (
+
+            "You are a professional translation assistant. Translate any provided text into the requested language. "
+
+            "Output only the translation."
+
+        )
+
+
+
+        responses_kwargs = {
+
+            "model": model_name,
+
+            "instructions": system_prompt,
+
+            "input": [
+
+                {
+
+                    "role": "user",
+
+                    "content": [
+
+                        {"type": "input_text", "text": prompt},
+
+                    ],
+
+                }
+
+            ],
+
+            "max_output_tokens": (
+
+                max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else None
+
+            ),
+
+            "timeout": timeout,
+
+            "text": text_config,
+
+        }
+
+
+
+        if temperature is not None:
+
+            responses_kwargs["temperature"] = temperature
+
+        if reasoning_config:
+
+            responses_kwargs["reasoning"] = reasoning_config
+
+
+
+        resp = self.client.responses.create(**responses_kwargs)
+
+
+
+        return extract_output_text(resp)
+
+
+
     # ---------- 内部：エラー整形 ----------
     @staticmethod
     def _format_api_error(exc: APIStatusError) -> str:

@@ -1,14 +1,20 @@
-"""
+﻿"""
 Settings manager module.
 """
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..utils.utils import get_config_dir
 
 logger = logging.getLogger("ocr_translator")
+
+SUPPORTED_API_TYPES = ("openai", "gemini")
+DEFAULT_MODELS_BY_API = {
+    "openai": "gpt-5-nano",
+    "gemini": "gemini-flash-lite-latest",
+}
 
 
 class SettingsManager:
@@ -26,7 +32,8 @@ class SettingsManager:
                 "selected_api": "openai",  # 'openai' or 'gemini' (used for combined OCR as well)
                 "openai_api_key": "",
                 "gemini_api_key": "",
-                "model": "gemini-flash-latest",  # default model for OCR/translation
+                "model": DEFAULT_MODELS_BY_API["openai"],  # legacy field mirrors the selected API model
+                "models_by_api": DEFAULT_MODELS_BY_API.copy(),  # remember per-provider models
                 "timeout": 60,  # API timeout in seconds
                 "reasoning_effort": "medium",
                 "verbosity": "medium",
@@ -59,6 +66,7 @@ class SettingsManager:
         except Exception as exc:
             logger.error("設定ファイルの読み込みでエラーが発生しました: %s", exc)
             self._last_loaded_mtime = None
+        self._ensure_model_map(settings)
         return settings
 
     def _ensure_latest_settings(self) -> None:
@@ -84,9 +92,42 @@ class SettingsManager:
             else:
                 dest[key] = value
 
+    def _ensure_model_map(self, settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """
+        Ensure that per-API model values exist and are synchronized with the legacy single model field.
+        """
+        if settings is None:
+            if self.settings is None:
+                self.settings = self._default_settings()
+            settings = self.settings
+
+        api_settings = settings.setdefault("api", {})
+        models = api_settings.get("models_by_api")
+        if not isinstance(models, dict):
+            models = {}
+            api_settings["models_by_api"] = models
+
+        selected_api = (api_settings.get("selected_api") or "openai").lower()
+        if selected_api not in SUPPORTED_API_TYPES:
+            selected_api = "openai"
+            api_settings["selected_api"] = selected_api
+
+        legacy_model = api_settings.get("model")
+        if isinstance(legacy_model, str) and legacy_model.strip():
+            models.setdefault(selected_api, legacy_model.strip())
+
+        for api_type, default_model in DEFAULT_MODELS_BY_API.items():
+            current = models.get(api_type)
+            if not isinstance(current, str) or not current.strip():
+                models[api_type] = default_model
+
+        api_settings["model"] = models.get(selected_api, DEFAULT_MODELS_BY_API[selected_api])
+        return models
+
     def save_settings(self) -> bool:
         """Persist current settings to disk."""
         try:
+            self._ensure_model_map()
             with open(self.config_file, "w", encoding="utf-8") as fh:
                 json.dump(self.settings, fh, indent=4, ensure_ascii=False)
             try:
@@ -157,18 +198,58 @@ class SettingsManager:
     def set_selected_api(self, api_type: str) -> bool:
         """Persist the selected API provider."""
         api_type_lower = api_type.lower()
-        if api_type_lower in ["openai", "gemini"]:
-            return self.set_setting("api", "selected_api", api_type_lower)
-        logger.warning("不明なAPI種別が指定されました: %s", api_type)
+        if api_type_lower in SUPPORTED_API_TYPES:
+            updated = self.set_setting("api", "selected_api", api_type_lower)
+            if updated:
+                models = self._ensure_model_map()
+                self.settings["api"]["model"] = models.get(
+                    api_type_lower, DEFAULT_MODELS_BY_API[api_type_lower]
+                )
+            return updated
+        logger.warning("無効なAPI種別が指定されました: %s", api_type)
         return False
 
     def get_model(self) -> str:
         """Return selected model name."""
-        return self.get_setting("api", "model")
+        return self.get_model_for_api()
 
     def set_model(self, model_name: str) -> bool:
         """Persist model name."""
-        return self.set_setting("api", "model", model_name)
+        return self.set_model_for_api(self.get_selected_api(), model_name)
+
+    def get_model_for_api(self, api_type: str | None = None) -> str:
+        """Return the stored model for a specific API (defaults to the currently selected API)."""
+        self._ensure_latest_settings()
+        models = self._ensure_model_map()
+        selected_api = (api_type or self.get_selected_api() or "openai").lower()
+        if selected_api not in SUPPORTED_API_TYPES:
+            selected_api = "openai"
+        model_name = models.get(selected_api)
+        if isinstance(model_name, str) and model_name.strip():
+            return model_name.strip()
+        return DEFAULT_MODELS_BY_API[selected_api]
+
+    def get_default_model_for_api(self, api_type: str) -> str:
+        """Return the default model for the specified API."""
+        return DEFAULT_MODELS_BY_API.get(api_type.lower(), DEFAULT_MODELS_BY_API["openai"])
+
+    def set_model_for_api(self, api_type: str, model_name: str) -> bool:
+        """Persist the model name for a specific API."""
+        self._ensure_latest_settings()
+        api_type_lower = (api_type or "").lower()
+        if api_type_lower not in SUPPORTED_API_TYPES:
+            logger.warning("無効なAPI種別が指定されました: %s", api_type)
+            return False
+
+        models = self._ensure_model_map()
+        sanitized = (model_name or "").strip()
+        if not sanitized:
+            sanitized = DEFAULT_MODELS_BY_API[api_type_lower]
+        models[api_type_lower] = sanitized
+
+        if self.get_selected_api() == api_type_lower:
+            self.settings["api"]["model"] = sanitized
+        return True
 
     def get_timeout(self) -> int:
         """Return configured API timeout in seconds."""
@@ -209,3 +290,4 @@ class SettingsManager:
     def set_transcribe_original_text(self, value: bool) -> bool:
         """Persist transcription flag."""
         return self.set_setting("ui", "transcribe_original_text", value)
+

@@ -21,6 +21,9 @@ class SettingsDialog(QDialog):
         
         self.settings_manager = SettingsManager()
         self.translation_manager = TranslationManager() # 追加
+        self._api_model_cache = {}
+        self._current_api: str | None = None
+        self._suspend_api_toggle = False
         
         self._init_ui()
         self._load_settings()
@@ -79,8 +82,9 @@ class SettingsDialog(QDialog):
                 border-bottom-color: #e0e0e0;
                 border-top-left-radius: 4px;
                 border-top-right-radius: 4px;
-                min-width: 8ex;
-                padding: 8px;
+                min-width: 90px;
+                min-height: 32px;
+                padding: 10px 16px;
                 font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
                 font-size: 14px;
             }
@@ -191,9 +195,12 @@ class SettingsDialog(QDialog):
         
         self.openai_radio = QRadioButton("OpenAI API")
         api_selection_layout.addWidget(self.openai_radio)
-        
+
         self.gemini_radio = QRadioButton("Google Gemini API")
         api_selection_layout.addWidget(self.gemini_radio)
+
+        self.openai_radio.toggled.connect(lambda checked: self._handle_api_radio_change("openai", checked))
+        self.gemini_radio.toggled.connect(lambda checked: self._handle_api_radio_change("gemini", checked))
         
         api_layout.addWidget(api_selection_group)
         
@@ -206,7 +213,6 @@ class SettingsDialog(QDialog):
         verify_layout.addWidget(self.verify_button)
         
         api_layout.addLayout(verify_layout)
-        api_layout.addStretch()
         
         # 共通モデル設定
         model_settings_group = QGroupBox("モデル設定")
@@ -220,16 +226,23 @@ class SettingsDialog(QDialog):
         model_settings_layout.addWidget(model_label)
         model_settings_layout.addWidget(self.model_edit)
 
-        recommend_label = QLabel("推奨: gemini-flash-lite-latest")
+        recommend_label = QLabel("デフォルト: OpenAI→gpt-5-nano / Gemini→gemini-flash-lite-latest")
         recommend_label.setStyleSheet("font-size: 12px; color: #666666;")
         model_settings_layout.addWidget(recommend_label)
 
         timeout_label = QLabel("APIタイムアウト (秒):")
         self.timeout_edit = QLineEdit()
         self.timeout_edit.setPlaceholderText("例: 60")
-        self.timeout_edit.setValidator(QIntValidator(1, 300)) # 1秒から300秒
+        self.timeout_edit.setValidator(QIntValidator(1, 300)) # 1秒〜300秒
         model_settings_layout.addWidget(timeout_label)
         model_settings_layout.addWidget(self.timeout_edit)
+
+        api_layout.addWidget(model_settings_group)
+
+        self.openai_detail_group = QGroupBox("OpenAI GPT-5 詳細設定")
+        openai_detail_layout = QVBoxLayout(self.openai_detail_group)
+        openai_detail_layout.setContentsMargins(10, 20, 10, 10)
+        openai_detail_layout.setSpacing(10)
 
         reasoning_label = QLabel("GPT-5 推論モード:")
         self.reasoning_combo = QComboBox()
@@ -237,25 +250,27 @@ class SettingsDialog(QDialog):
         self.reasoning_combo.addItem("低", "low")
         self.reasoning_combo.addItem("中 (推奨)", "medium")
         self.reasoning_combo.addItem("高", "high")
-        model_settings_layout.addWidget(reasoning_label)
-        model_settings_layout.addWidget(self.reasoning_combo)
+        openai_detail_layout.addWidget(reasoning_label)
+        openai_detail_layout.addWidget(self.reasoning_combo)
 
         verbosity_label = QLabel("GPT-5 出力の詳細度:")
         self.verbosity_combo = QComboBox()
         self.verbosity_combo.addItem("低", "low")
         self.verbosity_combo.addItem("中 (推奨)", "medium")
         self.verbosity_combo.addItem("高", "high")
-        model_settings_layout.addWidget(verbosity_label)
-        model_settings_layout.addWidget(self.verbosity_combo)
+        openai_detail_layout.addWidget(verbosity_label)
+        openai_detail_layout.addWidget(self.verbosity_combo)
 
         max_tokens_label = QLabel("GPT-5 最大出力トークン:")
         self.max_output_tokens_edit = QLineEdit()
         self.max_output_tokens_edit.setPlaceholderText("例: 1024")
         self.max_output_tokens_edit.setValidator(QIntValidator(1, 32768))
-        model_settings_layout.addWidget(max_tokens_label)
-        model_settings_layout.addWidget(self.max_output_tokens_edit)
+        openai_detail_layout.addWidget(max_tokens_label)
+        openai_detail_layout.addWidget(self.max_output_tokens_edit)
 
-        api_layout.addWidget(model_settings_group)
+        api_layout.addWidget(self.openai_detail_group)
+        api_layout.addStretch()
+
         
         self.tab_widget.addTab(api_tab, "API設定")
     
@@ -320,21 +335,32 @@ class SettingsDialog(QDialog):
         openai_api_key = self.settings_manager.get_api_key('openai')
         gemini_api_key = self.settings_manager.get_api_key('gemini')
         selected_api = self.settings_manager.get_selected_api()
-        model = self.settings_manager.get_model()
         timeout = self.settings_manager.get_timeout()
         reasoning_effort = self.settings_manager.get_openai_reasoning_effort()
         verbosity = self.settings_manager.get_openai_verbosity()
         max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
-        
+
         self.openai_api_key_edit.setText(openai_api_key if openai_api_key else "")
         self.gemini_api_key_edit.setText(gemini_api_key if gemini_api_key else "")
-        
-        if selected_api == 'gemini':
+
+        self._api_model_cache = {}
+        for api_type in ("openai", "gemini"):
+            value = self.settings_manager.get_model_for_api(api_type)
+            if not value:
+                value = self.settings_manager.get_default_model_for_api(api_type)
+            self._api_model_cache[api_type] = value
+
+        self._current_api = selected_api if selected_api in self._api_model_cache else "openai"
+        self._suspend_api_toggle = True
+        if self._current_api == 'gemini':
             self.gemini_radio.setChecked(True)
         else:
             self.openai_radio.setChecked(True)
+        self._suspend_api_toggle = False
 
-        self.model_edit.setText(model if model else "")
+        self._apply_model_text_from_cache()
+        self._update_openai_controls_visibility()
+
         self.timeout_edit.setText(str(timeout) if timeout else "")
 
         reasoning_index = self.reasoning_combo.findData(reasoning_effort)
@@ -369,17 +395,19 @@ class SettingsDialog(QDialog):
             openai_api_key = self.openai_api_key_edit.text()
             gemini_api_key = self.gemini_api_key_edit.text()
             selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'
-            model = self.model_edit.text()
+            self._current_api = selected_api
+            self._store_current_model_text()
             timeout = int(self.timeout_edit.text()) if self.timeout_edit.text().isdigit() else 60
             reasoning_effort = self.reasoning_combo.currentData()
             verbosity = self.verbosity_combo.currentData()
             max_output_tokens_text = self.max_output_tokens_edit.text()
             max_output_tokens = int(max_output_tokens_text) if max_output_tokens_text.isdigit() else 1024
-            
+
             self.settings_manager.set_api_key('openai', openai_api_key)
             self.settings_manager.set_api_key('gemini', gemini_api_key)
+            for api_type, model_value in self._api_model_cache.items():
+                self.settings_manager.set_model_for_api(api_type, model_value)
             self.settings_manager.set_selected_api(selected_api)
-            self.settings_manager.set_model(model)
             self.settings_manager.set_timeout(timeout)
             self.settings_manager.set_openai_reasoning_effort(reasoning_effort)
             self.settings_manager.set_openai_verbosity(verbosity)
@@ -406,6 +434,52 @@ class SettingsDialog(QDialog):
             logger.error(f"設定の保存中にエラーが発生しました: {str(e)}")
             QMessageBox.critical(self, "エラー", f"設定の保存中にエラーが発生しました: {str(e)}")
     
+    def _handle_api_radio_change(self, api_type: str, checked: bool) -> None:
+        """APIラジオボタン切替時の処理"""
+        if not checked:
+            return
+
+        if self._suspend_api_toggle:
+            self._current_api = api_type
+            self._apply_model_text_from_cache()
+            self._update_openai_controls_visibility()
+            return
+
+        if self._current_api == api_type:
+            self._update_openai_controls_visibility()
+            return
+
+        self._store_current_model_text()
+        self._current_api = api_type
+        if api_type not in self._api_model_cache:
+            self._api_model_cache[api_type] = self.settings_manager.get_default_model_for_api(api_type)
+        self._apply_model_text_from_cache()
+        self._update_openai_controls_visibility()
+
+    def _store_current_model_text(self) -> None:
+        """現在のテキストボックス内容をキャッシュ"""
+        if not self._current_api:
+            return
+        value = self.model_edit.text().strip()
+        if not value:
+            value = self.settings_manager.get_default_model_for_api(self._current_api)
+        self._api_model_cache[self._current_api] = value
+
+    def _apply_model_text_from_cache(self) -> None:
+        """アクティブAPIに対応するモデル名をUIへ反映"""
+        if not self._current_api:
+            return
+        value = self._api_model_cache.get(self._current_api)
+        if not value:
+            value = self.settings_manager.get_default_model_for_api(self._current_api)
+        self.model_edit.setText(value)
+
+    def _update_openai_controls_visibility(self) -> None:
+        """OpenAI専用設定の表示/非表示を切替"""
+        if hasattr(self, "openai_detail_group"):
+            self.openai_detail_group.setVisible(self.openai_radio.isChecked())
+
+
     def _verify_api_keys(self):
         """APIキーの検証"""
         selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'

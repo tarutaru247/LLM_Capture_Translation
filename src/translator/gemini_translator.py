@@ -100,7 +100,7 @@ class GeminiTranslator(TranslatorService):
 
     def _resolve_model_name(self) -> str:
         """Return a Gemini-compatible model name, falling back to default if necessary."""
-        configured_model = self.settings_manager.get_model()
+        configured_model = self.settings_manager.get_model_for_api("gemini")
         if configured_model and configured_model.lower().startswith("gemini"):
             return configured_model
         # Fallback to a safe default Gemini model if the configured one is meant for OpenAI (e.g., GPT-5).

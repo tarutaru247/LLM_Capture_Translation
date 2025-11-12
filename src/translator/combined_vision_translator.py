@@ -73,7 +73,7 @@ class CombinedVisionTranslator(TranslatorService):
         try:
             selected_api = self.settings_manager.get_selected_api()
             api_key = self.settings_manager.get_api_key(selected_api)
-            model_name = self.settings_manager.get_model()
+            model_name = self.settings_manager.get_model_for_api(selected_api)
             timeout = self.settings_manager.get_timeout()
 
             # QPixmap を base64 エンコードされた PNG データに変換

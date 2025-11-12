@@ -63,7 +63,7 @@ class VisionOCRService(OCRService):
         try:
             selected_api = self.settings_manager.get_selected_api()
             api_key = self.settings_manager.get_api_key(selected_api)
-            model_name = self.settings_manager.get_model() # 共通モデルを使用
+            model_name = self.settings_manager.get_model_for_api(selected_api) # 共通モデルを使用
             timeout = self.settings_manager.get_timeout() # 共通タイムアウトを使用
 
             # QPixmap を base64 エンコードされた PNG データに変換
