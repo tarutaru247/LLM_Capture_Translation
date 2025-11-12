@@ -220,7 +220,7 @@ class SettingsDialog(QDialog):
         model_settings_layout.addWidget(model_label)
         model_settings_layout.addWidget(self.model_edit)
 
-        recommend_label = QLabel("推奨: gemini-flash-latest")
+        recommend_label = QLabel("推奨: gemini-flash-lite-latest")
         recommend_label.setStyleSheet("font-size: 12px; color: #666666;")
         model_settings_layout.addWidget(recommend_label)
 

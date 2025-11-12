@@ -95,6 +95,8 @@ python build_exe.py
 - APIの利用には、各サービスプロバイダが定める料金が発生する場合があります。ご利用の際は料金体系を必ずご確認ください。
 - 本アプリケーションの使用によって生じたいかなる損害についても、開発者は責任を負いません。
 
+- GPT-5 系モデルを利用する場合は OpenAI Responses API 経由のみサポートしています。設定ダイアログの GPT-5 セクションで推論モード・出力詳細度・最大出力トークンを調整すると、/v1/responses 呼び出し時に自動反映されます。
+
 ## ライセンス
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

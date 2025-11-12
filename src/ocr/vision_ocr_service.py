@@ -4,7 +4,16 @@ import base64
 from io import BytesIO
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import QBuffer, QIODevice
+from openai import APIStatusError
 
+from ..utils.openai_responses import (
+    build_reasoning_config,
+    build_text_config,
+    describe_api_status_error,
+    extract_output_text,
+    is_openai_vision_model,
+    supports_temperature,
+)
 from ..utils.settings_manager import SettingsManager
 from ..utils.utils import handle_exception
 from .ocr_service import OCRService
@@ -65,6 +74,13 @@ class VisionOCRService(OCRService):
             buffer.close()
 
             if selected_api == "openai":
+                if not is_openai_vision_model(model_name):
+                    msg = (
+                        f"エラー: 選択されたOpenAIモデル '{model_name or '未設定'}' は画像入力をサポートしていません。"
+                        " 設定画面で GPT-5 Vision 対応モデル（例: gpt-5-nano, gpt-5.1-vision）を選択してください。"
+                    )
+                    logger.error(msg)
+                    return msg
                 return self._extract_text_with_openai(base64_image, api_key, model_name, timeout, lang)
             elif selected_api == "gemini":
                 return self._extract_text_with_gemini(base64_image, api_key, model_name, timeout, lang)
@@ -74,45 +90,96 @@ class VisionOCRService(OCRService):
 
         except Exception as e:
             error_msg = handle_exception(logger, e, "Vision OCR 処理")
-            return f"Vision OCR 処理エラー: {error_msg}"
+            return f"エラー: Vision OCR 処理に失敗しました: {error_msg}"
 
     def _extract_text_with_openai(self, base64_image: str, api_key: str, model_name: str, timeout: int, lang: str = None) -> str:
-        """
-        OpenAI Vision API を使用してテキストを抽出します。
-        """
+
+        """OpenAI Vision API を使用してテキストを抽出します。"""
+
         try:
+
             from openai import OpenAI
+
+
+
             client = OpenAI(api_key=api_key, timeout=timeout)
 
-            prompt_text = "画像内のテキストを改行を保ったまま抽出してください。OCR のみを行い、余計な説明は不要です。"
-            if lang:
-                prompt_text += f"テキストの言語は{lang}です。" # LLMに言語ヒントを与える
 
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
+
+            prompt_text = "画像内のテキストを改行を保ったまま抽出してください。OCR のみを行い、余計な説明は不要です。"
+
+            if lang:
+
+                prompt_text += f"テキストの言語は {lang} です。"
+
+
+
+            instructions = (
+
+                "You are an OCR assistant. Extract every piece of text from the provided image while preserving line breaks. "
+
+                "Return only the extracted text."
+
+            )
+
+
+
+            user_turn = build_user_turn(
+                prompt_text,
+                images=[
                     {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}",
-                                    "detail": "high" # high or low
-                                },
-                            },
-                        ],
+                        "url": f"data:image/png;base64,{base64_image}",
+                        "detail": "high",
                     }
                 ],
-                max_tokens=4096, # 抽出されるテキストの最大長
             )
-            extracted_text = response.choices[0].message.content
-            logger.info(f"OpenAI Vision OCR 処理が完了しました（{len(extracted_text)}文字）")
+
+
+            configured_max = self.settings_manager.get_openai_max_output_tokens()
+
+            if not isinstance(configured_max, int) or configured_max <= 0:
+
+                configured_max = 4096
+
+
+
+            temperature = 0.0
+            if not supports_temperature(model_name):
+                temperature = None
+
+            responses_kwargs = {
+                "model": model_name,
+                "instructions": instructions,
+                "input": [user_turn],
+
+                "timeout": timeout,
+                "max_output_tokens": configured_max,
+                "text": build_text_config(self.settings_manager.get_openai_verbosity()),
+            }
+
+            if temperature is not None:
+                responses_kwargs["temperature"] = temperature
+
+            reasoning = build_reasoning_config(self.settings_manager.get_openai_reasoning_effort())
+            if reasoning:
+                responses_kwargs["reasoning"] = reasoning
+
+
+            response = client.responses.create(**responses_kwargs)
+
+            extracted_text = extract_output_text(response)
+
+            logger.info("OpenAI Vision OCR 処理が完了しました（%s文字）", len(extracted_text))
+
             return extracted_text
+
+        except APIStatusError as exc:
+            message = describe_api_status_error(exc)
+            logger.error("OpenAI APIからエラー応答: %s", message)
+            return f"エラー: OpenAI Vision OCR 処理に失敗しました: {message}"
         except Exception as e:
             handle_exception(logger, e, "OpenAI Vision OCR 処理")
-            return f"OpenAI Vision OCR エラー: {e}"
+            return f"エラー: OpenAI Vision OCR 処理に失敗しました: {e}"
 
     def _extract_text_with_gemini(self, base64_image: str, api_key: str, model_name: str, timeout: int, lang: str = None) -> str:
         """
@@ -140,4 +207,4 @@ class VisionOCRService(OCRService):
             return extracted_text
         except Exception as e:
             handle_exception(logger, e, "Gemini Vision OCR 処理")
-            return f"Gemini Vision OCR エラー: {e}"
+            return f"エラー: Gemini Vision OCR 処理に失敗しました: {e}"
