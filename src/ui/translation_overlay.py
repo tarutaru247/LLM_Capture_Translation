@@ -30,7 +30,9 @@ class TranslationOverlay(QWidget):
     def _setup_ui(self, text: str):
         """UI要素のセットアップ"""
         layout = QVBoxLayout(self)
-        self.label = QLabel(text)
+        self.label = QLabel()
+        self.label.setTextFormat(Qt.PlainText)
+        self.label.setText(text)
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setWordWrap(True) # テキストの折り返しを有効化
 

@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict, Optional
 
 from ..utils.utils import get_config_dir
+from ..utils import secure_storage
 
 logger = logging.getLogger("ocr_translator")
 
@@ -66,6 +67,7 @@ class SettingsManager:
         except Exception as exc:
             logger.error("設定ファイルの読み込みでエラーが発生しました: %s", exc)
             self._last_loaded_mtime = None
+        self._normalize_api_key_storage(settings)
         self._ensure_model_map(settings)
         return settings
 
@@ -124,6 +126,19 @@ class SettingsManager:
         api_settings["model"] = models.get(selected_api, DEFAULT_MODELS_BY_API[selected_api])
         return models
 
+    def _normalize_api_key_storage(self, settings: Optional[Dict[str, Any]] = None) -> None:
+        """Ensure APIキーがDPAPI形式で保存されるよう整備する。"""
+        if settings is None:
+            settings = self.settings
+        if not settings:
+            return
+        api_settings = settings.setdefault("api", {})
+        for field in ("openai_api_key", "gemini_api_key"):
+            value = api_settings.get(field)
+            if not value or (isinstance(value, str) and value.startswith("dpapi:")):
+                continue
+            api_settings[field] = secure_storage.protect_secret(str(value))
+
     def save_settings(self) -> bool:
         """Persist current settings to disk."""
         try:
@@ -167,22 +182,25 @@ class SettingsManager:
         """Return API key for the requested provider."""
         api_type_lower = api_type.lower()
         if api_type_lower == "openai":
-            return self.get_setting("api", "openai_api_key")
+            stored = self.get_setting("api", "openai_api_key")
+            return secure_storage.unprotect_secret(stored)
         if api_type_lower == "gemini":
-            return self.get_setting("api", "gemini_api_key")
-        logger.warning("不明なAPI種別が指定されました: %s", api_type)
+            stored = self.get_setting("api", "gemini_api_key")
+            return secure_storage.unprotect_secret(stored)
+        logger.warning("未対応のAPIキーが要求されました: %s", api_type)
         return None
 
     def set_api_key(self, api_type: str, api_key: str) -> bool:
         """Store API key for the requested provider."""
         api_type_lower = api_type.lower()
         if api_type_lower == "openai":
-            return self.set_setting("api", "openai_api_key", api_key)
+            protected = secure_storage.protect_secret(api_key or "")
+            return self.set_setting("api", "openai_api_key", protected)
         if api_type_lower == "gemini":
-            return self.set_setting("api", "gemini_api_key", api_key)
-        logger.warning("不明なAPI種別が指定されました: %s", api_type)
+            protected = secure_storage.protect_secret(api_key or "")
+            return self.set_setting("api", "gemini_api_key", protected)
+        logger.warning("未対応のAPIが指定されました: %s", api_type)
         return False
-
     def get_target_language(self) -> str:
         """Return configured translation target language code."""
         return self.get_setting("language", "target_language")
@@ -290,4 +308,5 @@ class SettingsManager:
     def set_transcribe_original_text(self, value: bool) -> bool:
         """Persist transcription flag."""
         return self.set_setting("ui", "transcribe_original_text", value)
+
 

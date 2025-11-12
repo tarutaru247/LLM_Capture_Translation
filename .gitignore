@@ -1,25 +1,18 @@
-# ビルド成果物
-build/
-*.spec
+# Ignore everything by default
+/*
+
+# Allow listed files/directories
+!.gitignore
+!LICENSE
+!README.md
+!build_exe.py
+!main.py
+!requirements.txt
+!/docs/
+!/docs/**
+!/src/
+!/src/**
+
+# Still ignore build artefacts within allowed directories
+__pycache__/
 *.pyc
-
-# 機密情報を含む可能性のある設定ファイル
-settings.json
-
-# 作業ログ
-codex_log.md
-
-# 開発環境用スクリプト
-install-pyenv-win.ps1
-
-# エディタ・OS固有ファイル
-.vscode/
-.idea/
-*.log
-Thumbs.db
-.DS_Store
-
-docs/
-todo.md
-
-dist/

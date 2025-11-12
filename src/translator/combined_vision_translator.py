@@ -18,7 +18,7 @@ from ..utils.openai_responses import (
     supports_temperature,
 )
 from ..utils.settings_manager import SettingsManager
-from ..utils.utils import handle_exception
+from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
 
 logger = logging.getLogger('ocr_translator')
@@ -206,15 +206,17 @@ class CombinedVisionTranslator(TranslatorService):
             return "エラー: OpenAI APIキーが無効です。認証情報を確認してください。"
 
         except APIConnectionError as e:
-            logger.error("OpenAI APIへの接続に失敗しました: %s", e)
-            return f"エラー: APIへの接続エラーが発生しました: {e}"
+            safe_exc = sanitize_sensitive_data(str(e))
+            logger.error("OpenAI APIへの接続に失敗しました: %s", safe_exc)
+            return f"エラー: APIへの接続エラーが発生しました: {safe_exc}"
         except APIStatusError as e:
             message = describe_api_status_error(e)
             logger.error("OpenAI APIからエラー応答: %s", message)
             return f"エラー: APIエラーが発生しました: {message}"
         except Exception as e:
             handle_exception(logger, e, "OpenAI Vision 一括翻訳処理")
-            return f"エラー: OpenAI Vision 一括翻訳処理に失敗しました: {e}"
+            safe_exc = sanitize_sensitive_data(str(e))
+            return f"エラー: OpenAI Vision 一括翻訳処理に失敗しました: {safe_exc}"
 
     def _extract_and_translate_with_gemini(self, base64_image: str, api_key: str, model_name: str, timeout: int, target_lang: str = None) -> str:
         """
@@ -248,4 +250,5 @@ class CombinedVisionTranslator(TranslatorService):
             return translated_text
         except Exception as e:
             handle_exception(logger, e, "Gemini Vision 一括翻訳処理")
-            return f"エラー: Gemini Vision 一括翻訳処理に失敗しました: {e}"
+            safe_exc = sanitize_sensitive_data(str(e))
+            return f"エラー: Gemini Vision 一括翻訳処理に失敗しました: {safe_exc}"

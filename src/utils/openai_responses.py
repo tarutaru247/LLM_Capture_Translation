@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from openai import APIStatusError
 
+from ..utils.utils import sanitize_sensitive_data
+
 _ALLOWED_REASONING_EFFORTS = {"minimal", "low", "medium", "high"}
 _ALLOWED_VERBOSITY = {"low", "medium", "high"}
 _VISION_KEYWORDS = ("gpt-5",)
@@ -110,10 +112,12 @@ def describe_api_status_error(exc: APIStatusError) -> str:
                     or ""
                 )
                 if message:
-                    return f"{exc.status_code} - {message}"
+                    safe_message = sanitize_sensitive_data(message)
+                    return f"{exc.status_code} - {safe_message}"
             text = getattr(exc.response, "text", "") or ""
             if text:
-                return f"{exc.status_code} - {text}"
+                safe_text = sanitize_sensitive_data(text)
+                return f"{exc.status_code} - {safe_text}"
         return f"{getattr(exc, 'status_code', '400')} - <Response [Bad Request]>"
     except Exception:
         return "不明なAPIエラーが発生しました"

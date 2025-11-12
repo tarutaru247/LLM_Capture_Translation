@@ -7,7 +7,7 @@ from typing import Optional
 import google.generativeai as genai
 
 from ..utils.settings_manager import SettingsManager
-from ..utils.utils import handle_exception
+from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
 
 logger = logging.getLogger("ocr_translator")
@@ -92,10 +92,11 @@ class GeminiTranslator(TranslatorService):
             logger.info("Google Gemini APIキーの検証に成功しました。")
             return True, ""
         except Exception as exc:
-            error_msg = f"Google Gemini APIキーの検証中にエラーが発生しました: {exc}"
+            safe_exc = sanitize_sensitive_data(str(exc))
+            error_msg = f"Google Gemini APIキーの検証中にエラーが発生しました: {safe_exc}"
             logger.error(error_msg)
-            if "timeout" in str(exc).lower():
-                return False, f"APIへの接続エラー: {exc} (タイムアウトの可能性あり)"
+            if "timeout" in safe_exc.lower():
+                return False, f"APIへの接続エラー: {safe_exc} (タイムアウトの可能性あり)"
             return False, error_msg
 
     def _resolve_model_name(self) -> str:

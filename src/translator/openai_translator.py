@@ -16,7 +16,7 @@ from ..utils.openai_responses import (
     supports_temperature,
 )
 from ..utils.settings_manager import SettingsManager
-from ..utils.utils import handle_exception
+from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
 
 logger = logging.getLogger("ocr_translator")
@@ -238,10 +238,12 @@ class OpenAITranslator(TranslatorService):
             logger.error("OpenAI APIキーの認証に失敗しました。")
             return False, "APIキーが無効です。認証情報を確認してください。"
         except APIConnectionError as exc:
-            logger.error("OpenAI APIへの接続に失敗しました: %s", exc)
-            return False, f"APIへの接続エラー: {exc} (タイムアウトの可能性あり)"
+            safe_exc = sanitize_sensitive_data(str(exc))
+            logger.error("OpenAI APIへの接続に失敗しました: %s", safe_exc)
+            return False, f"APIへの接続エラー: {safe_exc} (タイムアウトの可能性あり)"
         except APIStatusError as exc:
             return False, OpenAITranslator._format_api_error(exc)
         except Exception as exc:
-            logger.error("OpenAI APIキー検証中に予期せぬエラー: %s", exc)
-            return False, f"予期せぬエラー: {exc}"
+            safe_exc = sanitize_sensitive_data(str(exc))
+            logger.error("OpenAI APIキー検証中に予期せぬエラー: %s", safe_exc)
+            return False, f"予期せぬエラー: {safe_exc}"

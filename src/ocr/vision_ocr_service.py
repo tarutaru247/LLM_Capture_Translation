@@ -15,7 +15,7 @@ from ..utils.openai_responses import (
     supports_temperature,
 )
 from ..utils.settings_manager import SettingsManager
-from ..utils.utils import handle_exception
+from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .ocr_service import OCRService
 
 logger = logging.getLogger('ocr_translator')
@@ -179,7 +179,8 @@ class VisionOCRService(OCRService):
             return f"エラー: OpenAI Vision OCR 処理に失敗しました: {message}"
         except Exception as e:
             handle_exception(logger, e, "OpenAI Vision OCR 処理")
-            return f"エラー: OpenAI Vision OCR 処理に失敗しました: {e}"
+            safe_exc = sanitize_sensitive_data(str(e))
+            return f"エラー: OpenAI Vision OCR 処理に失敗しました: {safe_exc}"
 
     def _extract_text_with_gemini(self, base64_image: str, api_key: str, model_name: str, timeout: int, lang: str = None) -> str:
         """
@@ -207,4 +208,5 @@ class VisionOCRService(OCRService):
             return extracted_text
         except Exception as e:
             handle_exception(logger, e, "Gemini Vision OCR 処理")
-            return f"エラー: Gemini Vision OCR 処理に失敗しました: {e}"
+            safe_exc = sanitize_sensitive_data(str(e))
+            return f"エラー: Gemini Vision OCR 処理に失敗しました: {safe_exc}"

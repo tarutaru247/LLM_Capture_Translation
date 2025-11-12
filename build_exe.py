@@ -42,7 +42,7 @@ def create_executable():
         sys.executable,
         "-m",
         "PyInstaller",
-        "--name=キャプチャAI翻訳くん",
+        "--name=スクショAI翻訳",
         "--windowed",  # GUIアプリケーション
         "--onefile",   # 単一の実行ファイル
         "--icon=resources/icon.ico",  # アイコン（存在する場合）

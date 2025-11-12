@@ -43,19 +43,11 @@ class TranslationManager:
         if selected_api == 'openai':
             if self.openai_translator.is_available():
                 return self.openai_translator.translate(text, source_lang, target_lang)
-            elif self.gemini_translator.is_available():
-                logger.warning("OpenAI APIキーが設定されていないため、Gemini APIを使用します")
-                return self.gemini_translator.translate(text, source_lang, target_lang)
-            else:
-                return "エラー: APIキーが設定されていません。設定画面でAPIキーを設定してください。"
+            return "エラー: OpenAI APIキーが設定されていません。設定画面でAPIキーを設定してください。"
         else:  # gemini
             if self.gemini_translator.is_available():
                 return self.gemini_translator.translate(text, source_lang, target_lang)
-            elif self.openai_translator.is_available():
-                logger.warning("Gemini APIキーが設定されていないため、OpenAI APIを使用します")
-                return self.openai_translator.translate(text, source_lang, target_lang)
-            else:
-                return "エラー: APIキーが設定されていません。設定画面でAPIキーを設定してください。"
+            return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。"
     
     def translate_image(self, pixmap: QPixmap, target_lang: str = None) -> str: # 追加
         """

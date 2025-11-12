@@ -128,7 +128,7 @@ class MainWindow(QMainWindow):
         # ステータスバーの設定
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("準備完了 (ホットキー: Ctrl+Shift+X)")
+        self.status_bar.showMessage("準備完了 (ホットキー: Ctrl+Shift+X) / 送信前に内容をご確認ください")
         
         # 中央ウィジェットの設定
         central_widget = QWidget()
@@ -143,6 +143,16 @@ class MainWindow(QMainWindow):
         capture_button.setMinimumHeight(40)
         capture_button.clicked.connect(self._on_capture_button_clicked)
         main_layout.addWidget(capture_button)
+        
+        # データ送信に関する注意書き
+        self.data_notice_label = QLabel(
+            "【注意】選択した画面領域の画像および抽出テキストは、設定されたAIサービス(OpenAI / Google Gemini)へ送信されます。機密情報は含めないでください。"
+        )
+        self.data_notice_label.setWordWrap(True)
+        self.data_notice_label.setStyleSheet(
+            "color: #b22222; font-size: 12px; background-color: #fff8f0; padding: 6px; border: 1px solid #f4c6a6; border-radius: 4px;"
+        )
+        main_layout.addWidget(self.data_notice_label)
         
         # 言語選択
         language_layout = QHBoxLayout()
@@ -181,6 +191,7 @@ class MainWindow(QMainWindow):
         
         self.original_text_edit = QTextEdit()
         self.original_text_edit.setReadOnly(True)
+        self.original_text_edit.setAcceptRichText(False)
         original_layout.addWidget(self.original_text_edit)
         
         copy_original_button = QPushButton("コピー")
@@ -195,6 +206,7 @@ class MainWindow(QMainWindow):
         
         self.translation_text_edit = QTextEdit()
         self.translation_text_edit.setReadOnly(True)
+        self.translation_text_edit.setAcceptRichText(False)
         translation_layout.addWidget(self.translation_text_edit)
         
         copy_translation_button = QPushButton("コピー")
@@ -303,7 +315,7 @@ class MainWindow(QMainWindow):
             extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
             if extracted_text and not extracted_text.startswith("エラー:"):
                 self.extracted_text = extracted_text
-                self.original_text_edit.setText(extracted_text)
+                self.original_text_edit.setPlainText(extracted_text)
                 translated_text = self.translation_manager.translate(extracted_text, target_lang)
             else:
                 error_message = extracted_text or "テキストの抽出に失敗しました。"
@@ -317,7 +329,7 @@ class MainWindow(QMainWindow):
 
         if translated_text and not translated_text.startswith("エラー:"):
             self.translated_text = translated_text
-            self.translation_text_edit.setText(translated_text)
+            self.translation_text_edit.setPlainText(translated_text)
             api_info = f"(API: {self.settings_manager.get_selected_api().upper()})"
             self.status_bar.showMessage(f"翻訳が完了しました。{api_info}", 5000)
             logger.info("翻訳成功")
@@ -344,7 +356,7 @@ class MainWindow(QMainWindow):
             # エラー処理
             final_error = error_message or translated_text or "不明なエラーが発生しました。"
             self.status_bar.showMessage(f"エラー: {final_error}", 5000)
-            self.translation_text_edit.setText(f"翻訳に失敗しました。\n詳細: {final_error}")
+            self.translation_text_edit.setPlainText(f"翻訳に失敗しました。\n詳細: {final_error}")
             logger.error(f"翻訳失敗: {final_error}")
     
     def _get_selected_target_language(self) -> str:
