@@ -9,7 +9,7 @@ from ctypes import wintypes
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QLabel, QTextEdit, QComboBox,
                             QAction, QMenu, QToolBar, QStatusBar, QMessageBox, QApplication)
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QRect
 from PyQt5.QtGui import QIcon, QPixmap
 
 from ..ui.screen_capture import ScreenCaptureWindow
@@ -18,6 +18,7 @@ from ..ui.settings_dialog import SettingsDialog
 from ..ui.translation_overlay import TranslationOverlay
 from ..ocr.vision_ocr_service import VisionOCRService
 from ..translator.translation_manager import TranslationManager
+from ..utils.utils import sanitize_sensitive_data
 
 logger = logging.getLogger('ocr_translator')
 
@@ -27,6 +28,44 @@ MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
 VK_X = 0x58
 WM_HOTKEY = 0x0312
+
+class TranslationWorker(QThread):
+    """OCR/翻訳をバックグラウンドで実行するスレッド"""
+    finished = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool,
+                 ocr_service: VisionOCRService, translation_manager: TranslationManager):
+        super().__init__()
+        self.pixmap = pixmap.copy()
+        self.target_lang = target_lang
+        self.transcribe_original = transcribe_original
+        self.ocr_service = ocr_service
+        self.translation_manager = translation_manager
+
+    def run(self):
+        try:
+            if self.transcribe_original:
+                extracted_text = self.ocr_service.extract_text(self.pixmap)
+                if not extracted_text or extracted_text.startswith("エラー:"):
+                    self.failed.emit(extracted_text or "テキストの抽出に失敗しました。")
+                    return
+                translated_text = self.translation_manager.translate(
+                    extracted_text,
+                    target_lang=self.target_lang
+                )
+                if translated_text and translated_text.startswith("エラー:"):
+                    self.failed.emit(translated_text)
+                    return
+                self.finished.emit({"translated": translated_text, "extracted": extracted_text})
+            else:
+                translated_text = self.translation_manager.translate_image(self.pixmap, self.target_lang)
+                if translated_text and translated_text.startswith("エラー:"):
+                    self.failed.emit(translated_text)
+                    return
+                self.finished.emit({"translated": translated_text})
+        except Exception as exc:
+            self.failed.emit(sanitize_sensitive_data(str(exc)))
 
 class MainWindow(QMainWindow):
     """アプリケーションのメインウィンドウ"""
@@ -60,6 +99,10 @@ class MainWindow(QMainWindow):
 
         # オーバーレイウィンドウ
         self.overlay = None
+
+        # 非同期処理用
+        self.worker_thread = None
+        self._last_capture_global_rect: QRect | None = None
         
         # UIの初期化
         self._init_ui()
@@ -296,76 +339,42 @@ class MainWindow(QMainWindow):
             self.show()
             return
 
+        # 直前の処理がまだ走っている場合は弾く
+        if self.worker_thread and self.worker_thread.isRunning():
+            logger.warning("前回の翻訳処理が実行中のため新規リクエストを無視します。")
+            self.status_bar.showMessage("前回の処理が終わるまでお待ちください", 3000)
+            return
+
+        # オーバーレイ位置計算用にキャプチャ矩形を保存（ウィンドウ破棄後も使えるようにする）
+        try:
+            capture_rect = self.capture_window.rubber_band.geometry()
+            window_geo = self.capture_window.geometry()
+            self._last_capture_global_rect = capture_rect.translated(window_geo.topLeft())
+        except Exception as exc:
+            logger.warning("キャプチャ矩形の保存に失敗: %s", sanitize_sensitive_data(str(exc)))
+            self._last_capture_global_rect = None
+
         self.captured_pixmap = pixmap
         self.status_bar.showMessage("キャプチャ完了、翻訳処理中...")
         self.progress_label.setText("翻訳処理中...")
         self.progress_label.show()
         QApplication.processEvents() # UIの更新を即時反映
 
-        # --- 翻訳処理 ---
+        # --- 翻訳処理（バックグラウンド） ---
         target_lang = self._get_selected_target_language()
         transcribe_original = self.settings_manager.get_transcribe_original_text()
         self._update_ui_visibility()
 
-        translated_text = None
-        error_message = None
-
-        if transcribe_original:
-            # フロー1: OCR -> 翻訳
-            extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
-            if extracted_text and not extracted_text.startswith("エラー:"):
-                self.extracted_text = extracted_text
-                self.original_text_edit.setPlainText(extracted_text)
-                translated_text = self.translation_manager.translate(
-                    extracted_text,
-                    target_lang=target_lang  # 翻訳先言語を正しく渡す
-                )
-            else:
-                error_message = extracted_text or "テキストの抽出に失敗しました。"
-        else:
-            # フロー2: 画像から直接翻訳
-            translated_text = self.translation_manager.translate_image(self.captured_pixmap, target_lang)
-
-        # --- 処理結果の表示 ---
-        self.progress_label.hide()
-        self.show() # メインウィンドウを再表示
-
-        if translated_text and not translated_text.startswith("エラー:"):
-            self.translated_text = translated_text
-            self.translation_text_edit.setPlainText(translated_text)
-            api_info = f"(API: {self.settings_manager.get_selected_api().upper()})"
-            self.status_bar.showMessage(f"翻訳が完了しました。{api_info}", 5000)
-            logger.info("翻訳成功")
-
-            # --- オーバーレイ表示 ---
-            # 以前のオーバーレイが残っていれば閉じる
-            try:
-                if self.overlay and self.overlay.isVisible():
-                    self.overlay.close()
-            except RuntimeError:
-                # このブロックは、前のオーバーレイが自動的に閉じた後に新しい翻訳が実行された場合に正常に到達します
-                logger.info("古いオーバーレイは自動的に破棄済みのため、新しいオーバーレイを表示します。")
-                self.overlay = None # 参照をクリア
-            
-            # 表示位置を計算（キャプチャ領域の下中央）
-            capture_rect = self.capture_window.rubber_band.geometry()
-            # rubber_band の座標はキャプチャウィンドウ基準なので、グローバル座標に変換する
-            window_geo = self.capture_window.geometry()
-            global_x = window_geo.x() + capture_rect.x()
-            global_y = window_geo.y() + capture_rect.y()
-
-            pos_x = global_x + (capture_rect.width() / 2) - 200 # overlay幅の半分を引く
-            pos_y = global_y + capture_rect.height() + 10 # 10px下に表示
-
-            self.overlay = TranslationOverlay(translated_text, position=(int(pos_x), int(pos_y)))
-            self.overlay.show_and_fade_out()
-
-        else:
-            # エラー処理
-            final_error = error_message or translated_text or "不明なエラーが発生しました。"
-            self.status_bar.showMessage(f"エラー: {final_error}", 5000)
-            self.translation_text_edit.setPlainText(f"翻訳に失敗しました。\n詳細: {final_error}")
-            logger.error(f"翻訳失敗: {final_error}")
+        self.worker_thread = TranslationWorker(
+            self.captured_pixmap,
+            target_lang,
+            transcribe_original,
+            self.ocr_service,
+            self.translation_manager
+        )
+        self.worker_thread.finished.connect(self._on_translation_finished)
+        self.worker_thread.failed.connect(self._on_translation_failed)
+        self.worker_thread.start()
     
     def _get_selected_target_language(self) -> str:
         """選択されている翻訳先言語コードを取得するヘルパーメソッド"""
@@ -396,6 +405,68 @@ class MainWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.translation_text_edit.toPlainText())
         self.status_bar.showMessage("翻訳をクリップボードにコピーしました", 3000)
+
+    def _on_translation_finished(self, result: dict):
+        """バックグラウンド翻訳完了時の処理"""
+        self.progress_label.hide()
+        self.show()
+        self.worker_thread = None
+
+        translated_text = (result or {}).get("translated", "")
+        extracted_text = (result or {}).get("extracted", "")
+
+        if extracted_text:
+            self.extracted_text = extracted_text
+            self.original_text_edit.setPlainText(extracted_text)
+
+        if translated_text:
+            self.translated_text = translated_text
+            self.translation_text_edit.setPlainText(translated_text)
+            api_info = f"(API: {self.settings_manager.get_selected_api().upper()})"
+            self.status_bar.showMessage(f"翻訳が完了しました。{api_info}", 5000)
+            logger.info("翻訳成功")
+            self._show_overlay(translated_text)
+        else:
+            self._on_translation_failed("翻訳結果が空でした。")
+
+    def _on_translation_failed(self, message: str):
+        """バックグラウンド翻訳失敗時の処理"""
+        self.progress_label.hide()
+        self.show()
+        self.worker_thread = None
+        final_error = message or "不明なエラーが発生しました。"
+        self.status_bar.showMessage(f"エラー: {final_error}", 5000)
+        self.translation_text_edit.setPlainText(f"翻訳に失敗しました。\n詳細: {final_error}")
+        logger.error(f"翻訳失敗: {final_error}")
+
+    def _show_overlay(self, translated_text: str):
+        """オーバーレイを安全に表示する"""
+        if not translated_text:
+            return
+
+        # 以前のオーバーレイが残っていれば閉じる
+        try:
+            if self.overlay and self.overlay.isVisible():
+                self.overlay.close()
+        except RuntimeError:
+            logger.info("古いオーバーレイは自動破棄済みのため新しいオーバーレイを表示します。")
+            self.overlay = None
+
+        # 表示位置計算（キャプチャ領域の下中央）。取得できなければ画面中央付近にフォールバック。
+        pos_x = pos_y = None
+        if self._last_capture_global_rect:
+            rect = self._last_capture_global_rect
+            pos_x = rect.x() + (rect.width() / 2) - 200
+            pos_y = rect.y() + rect.height() + 10
+
+        if pos_x is None or pos_y is None:
+            screen = QApplication.primaryScreen()
+            geo = screen.availableGeometry() if screen else QRect(0, 0, 800, 600)
+            pos_x = geo.x() + (geo.width() / 2) - 200
+            pos_y = geo.y() + (geo.height() / 2)
+
+        self.overlay = TranslationOverlay(translated_text, position=(int(pos_x), int(pos_y)))
+        self.overlay.show_and_fade_out()
     
     def _show_settings_dialog(self):
         """設定ダイアログを表示"""
