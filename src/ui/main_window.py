@@ -9,7 +9,7 @@ from ctypes import wintypes
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QLabel, QTextEdit, QComboBox,
                             QAction, QMenu, QToolBar, QStatusBar, QMessageBox, QApplication)
-from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QRect
+from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QRect, QBuffer, QIODevice
 from PyQt5.QtGui import QIcon, QPixmap
 
 from ..ui.screen_capture import ScreenCaptureWindow
