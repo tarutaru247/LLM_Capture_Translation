@@ -316,7 +316,10 @@ class MainWindow(QMainWindow):
             if extracted_text and not extracted_text.startswith("エラー:"):
                 self.extracted_text = extracted_text
                 self.original_text_edit.setPlainText(extracted_text)
-                translated_text = self.translation_manager.translate(extracted_text, target_lang)
+                translated_text = self.translation_manager.translate(
+                    extracted_text,
+                    target_lang=target_lang  # 翻訳先言語を正しく渡す
+                )
             else:
                 error_message = extracted_text or "テキストの抽出に失敗しました。"
         else:
