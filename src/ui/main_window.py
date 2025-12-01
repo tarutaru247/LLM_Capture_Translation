@@ -34,11 +34,11 @@ class TranslationWorker(QThread):
     finished = pyqtSignal(dict)
     failed = pyqtSignal(str)
 
-    def __init__(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool,
+    def __init__(self, png_bytes: bytes, target_lang: str, transcribe_original: bool,
                  ocr_service: VisionOCRService, translation_manager: TranslationManager):
         super().__init__()
-        # QPixmapはGUIスレッド専用のため、ワーカー側ではQImageを使用する
-        self.image = pixmap.toImage().copy()
+        # ワーカーではQtのGUIオブジェクトを扱わず、PNGバイト列のみを使う
+        self.png_bytes = png_bytes
         self.target_lang = target_lang
         self.transcribe_original = transcribe_original
         self.ocr_service = ocr_service
@@ -47,7 +47,7 @@ class TranslationWorker(QThread):
     def run(self):
         try:
             if self.transcribe_original:
-                extracted_text = self.ocr_service.extract_text(self.image)
+                extracted_text = self.ocr_service.extract_text(self.png_bytes)
                 if not extracted_text or extracted_text.startswith("エラー:"):
                     self.failed.emit(extracted_text or "テキストの抽出に失敗しました。")
                     return
@@ -60,7 +60,7 @@ class TranslationWorker(QThread):
                     return
                 self.finished.emit({"translated": translated_text, "extracted": extracted_text})
             else:
-                translated_text = self.translation_manager.translate_image(self.image, self.target_lang)
+                translated_text = self.translation_manager.translate_image(self.png_bytes, self.target_lang)
                 if translated_text and translated_text.startswith("エラー:"):
                     self.failed.emit(translated_text)
                     return
@@ -370,8 +370,15 @@ class MainWindow(QMainWindow):
         transcribe_original = self.settings_manager.get_transcribe_original_text()
         self._update_ui_visibility()
 
+        # GUIスレッドでPNGバイト列に変換してからワーカーへ渡す（Qtオブジェクトをスレッドに持ち出さない）
+        buffer = QBuffer()
+        buffer.open(QIODevice.ReadWrite)
+        self.captured_pixmap.save(buffer, "PNG")
+        png_bytes = bytes(buffer.data())
+        buffer.close()
+
         self.worker_thread = TranslationWorker(
-            self.captured_pixmap,
+            png_bytes,
             target_lang,
             transcribe_original,
             self.ocr_service,

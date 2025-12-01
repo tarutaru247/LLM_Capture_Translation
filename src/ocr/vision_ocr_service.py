@@ -42,7 +42,7 @@ class VisionOCRService(OCRService):
             return False
         return True
 
-    def extract_text(self, pixmap: QPixmap | QImage, lang: str = None) -> str:
+    def extract_text(self, pixmap: QPixmap | QImage | bytes, lang: str = None) -> str:
         """
         画像からテキストを抽出します。
 
@@ -56,9 +56,17 @@ class VisionOCRService(OCRService):
         if not self.is_available():
             return "エラー: Vision OCR サービスが利用できません。APIキーを確認してください。"
 
-        if pixmap.isNull():
-            logger.error("有効な画像がありません。")
-            return ""
+        base64_image: str | None = None
+
+        if isinstance(pixmap, (bytes, bytearray)):
+            if not pixmap:
+                logger.error("有効な画像がありません。")
+                return ""
+            base64_image = base64.b64encode(pixmap).decode('utf-8')
+        else:
+            if pixmap.isNull():
+                logger.error("有効な画像がありません。")
+                return ""
 
         try:
             selected_api = self.settings_manager.get_selected_api()
@@ -66,12 +74,13 @@ class VisionOCRService(OCRService):
             model_name = self.settings_manager.get_model_for_api(selected_api) # 共通モデルを使用
             timeout = self.settings_manager.get_timeout() # 共通タイムアウトを使用
 
-            # 画像を base64 エンコードされた PNG データに変換
-            buffer = QBuffer()
-            buffer.open(QIODevice.ReadWrite)
-            pixmap.save(buffer, "PNG")
-            base64_image = base64.b64encode(buffer.data().data()).decode('utf-8')
-            buffer.close()
+            if base64_image is None:
+                # 画像を base64 エンコードされた PNG データに変換
+                buffer = QBuffer()
+                buffer.open(QIODevice.ReadWrite)
+                pixmap.save(buffer, "PNG")
+                base64_image = base64.b64encode(buffer.data().data()).decode('utf-8')
+                buffer.close()
 
             if selected_api == "openai":
                 if not is_openai_vision_model(model_name):

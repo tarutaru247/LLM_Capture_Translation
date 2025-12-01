@@ -49,7 +49,7 @@ class TranslationManager:
                 return self.gemini_translator.translate(text, source_lang, target_lang)
             return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。"
     
-    def translate_image(self, pixmap: QPixmap | QImage, target_lang: str = None) -> str: # 追加
+    def translate_image(self, pixmap: QPixmap | QImage | bytes, target_lang: str = None) -> str: # 追加
         """
         画像からテキストを抽出し、指定された言語に翻訳します（一括処理）。
 
