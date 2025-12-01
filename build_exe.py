@@ -11,15 +11,28 @@ def create_executable():
     print("PyInstallerを使用して実行ファイルを作成します...")
     
     # ビルドディレクトリと配布ディレクトリをクリーンアップ
-    if os.path.exists("dist"):
-        shutil.rmtree("dist")
-        print("既存の 'dist' フォルダを削除しました。")
-    if os.path.exists("build"):
-        shutil.rmtree("build")
-        print("既存の 'build' フォルダを削除しました。")
-    if os.path.exists("OCR翻訳ツール.spec"):
-        os.remove("OCR翻訳ツール.spec")
-        print("既存の '.spec' ファイルを削除しました。")
+    # ロックされている場合はスキップし、新しい dist/build パスを使う
+    dist_dir = "dist"
+    build_dir = "build"
+    try:
+        if os.path.exists(dist_dir):
+            shutil.rmtree(dist_dir)
+            print("既存の 'dist' フォルダを削除しました。")
+    except Exception as exc:
+        print(f"dist フォルダの削除に失敗したためスキップします: {exc}")
+        dist_dir = "dist_new"
+    try:
+        if os.path.exists(build_dir):
+            shutil.rmtree(build_dir)
+            print("既存の 'build' フォルダを削除しました。")
+    except Exception as exc:
+        print(f"build フォルダの削除に失敗したためスキップします: {exc}")
+        build_dir = "build_new"
+    # 旧名称のspecも掃除（日本語名を避けるためASCII名に統一）
+    for spec_name in ("OCR翻訳ツール.spec", "スクショAI翻訳.spec", "ocr_translator.spec"):
+        if os.path.exists(spec_name):
+            os.remove(spec_name)
+            print(f"既存の '{spec_name}' を削除しました。")
     
     # PyInstallerがインストールされているか確認
     try:
@@ -42,7 +55,9 @@ def create_executable():
         sys.executable,
         "-m",
         "PyInstaller",
-        "--name=スクショAI翻訳",
+        "--name=ocr_translator",  # ASCII名に統一
+        f"--distpath={dist_dir}",
+        f"--workpath={build_dir}",
         "--windowed",  # GUIアプリケーション
         "--onefile",   # 単一の実行ファイル
         "--icon=resources/icon.ico",  # アイコン（存在する場合）
