@@ -389,32 +389,8 @@ class MainWindow(QMainWindow):
 
     def _show_overlay(self, translated_text: str):
         """オーバーレイを安全に表示する"""
-        if not translated_text:
-            return
-
-        # 以前のオーバーレイが残っていれば閉じる
-        try:
-            if self.overlay and self.overlay.isVisible():
-                self.overlay.close()
-        except RuntimeError:
-            logger.info("古いオーバーレイは自動破棄済みのため新しいオーバーレイを表示します。")
-            self.overlay = None
-
-        # 表示位置計算（キャプチャ領域の下中央）。取得できなければ画面中央付近にフォールバック。
-        pos_x = pos_y = None
-        if self._last_capture_global_rect:
-            rect = self._last_capture_global_rect
-            pos_x = rect.x() + (rect.width() / 2) - 200
-            pos_y = rect.y() + rect.height() + 10
-
-        if pos_x is None or pos_y is None:
-            screen = QApplication.primaryScreen()
-            geo = screen.availableGeometry() if screen else QRect(0, 0, 800, 600)
-            pos_x = geo.x() + (geo.width() / 2) - 200
-            pos_y = geo.y() + (geo.height() / 2)
-
-        self.overlay = TranslationOverlay(translated_text, position=(int(pos_x), int(pos_y)))
-        self.overlay.show_and_fade_out()
+        # ユーザー要望により、ポップアップ表示を無効化
+        return
     
     def _show_settings_dialog(self):
         """設定ダイアログを表示"""
