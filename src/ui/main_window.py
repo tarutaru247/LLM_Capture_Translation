@@ -37,7 +37,8 @@ class TranslationWorker(QThread):
     def __init__(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool,
                  ocr_service: VisionOCRService, translation_manager: TranslationManager):
         super().__init__()
-        self.pixmap = pixmap.copy()
+        # QPixmapはGUIスレッド専用のため、ワーカー側ではQImageを使用する
+        self.image = pixmap.toImage().copy()
         self.target_lang = target_lang
         self.transcribe_original = transcribe_original
         self.ocr_service = ocr_service
@@ -46,7 +47,7 @@ class TranslationWorker(QThread):
     def run(self):
         try:
             if self.transcribe_original:
-                extracted_text = self.ocr_service.extract_text(self.pixmap)
+                extracted_text = self.ocr_service.extract_text(self.image)
                 if not extracted_text or extracted_text.startswith("エラー:"):
                     self.failed.emit(extracted_text or "テキストの抽出に失敗しました。")
                     return
@@ -59,7 +60,7 @@ class TranslationWorker(QThread):
                     return
                 self.finished.emit({"translated": translated_text, "extracted": extracted_text})
             else:
-                translated_text = self.translation_manager.translate_image(self.pixmap, self.target_lang)
+                translated_text = self.translation_manager.translate_image(self.image, self.target_lang)
                 if translated_text and translated_text.startswith("エラー:"):
                     self.failed.emit(translated_text)
                     return

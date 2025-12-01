@@ -1,7 +1,7 @@
 import logging
 import base64
 from io import BytesIO
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import QBuffer, QIODevice
 
 from openai import OpenAI, APIStatusError, APIConnectionError, AuthenticationError
@@ -52,7 +52,7 @@ class CombinedVisionTranslator(TranslatorService):
             return False
         return True
 
-    def translate_image(self, pixmap: QPixmap, target_lang: str = None) -> str:
+    def translate_image(self, pixmap: QPixmap | QImage, target_lang: str = None) -> str:
         """
         画像からテキストを抽出し、指定された言語に翻訳します。
 

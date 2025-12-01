@@ -3,7 +3,7 @@
 """
 import logging
 from ..utils.settings_manager import SettingsManager
-from PyQt5.QtGui import QPixmap # 追加
+from PyQt5.QtGui import QPixmap, QImage # 追加
 from .openai_translator import OpenAITranslator
 from .gemini_translator import GeminiTranslator
 from .combined_vision_translator import CombinedVisionTranslator # 追加
@@ -49,7 +49,7 @@ class TranslationManager:
                 return self.gemini_translator.translate(text, source_lang, target_lang)
             return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。"
     
-    def translate_image(self, pixmap: QPixmap, target_lang: str = None) -> str: # 追加
+    def translate_image(self, pixmap: QPixmap | QImage, target_lang: str = None) -> str: # 追加
         """
         画像からテキストを抽出し、指定された言語に翻訳します（一括処理）。
 

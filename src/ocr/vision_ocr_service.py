@@ -2,7 +2,7 @@ import os
 import logging
 import base64
 from io import BytesIO
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import QBuffer, QIODevice
 from openai import APIStatusError
 
@@ -42,7 +42,7 @@ class VisionOCRService(OCRService):
             return False
         return True
 
-    def extract_text(self, pixmap: QPixmap, lang: str = None) -> str:
+    def extract_text(self, pixmap: QPixmap | QImage, lang: str = None) -> str:
         """
         画像からテキストを抽出します。
 
@@ -66,7 +66,7 @@ class VisionOCRService(OCRService):
             model_name = self.settings_manager.get_model_for_api(selected_api) # 共通モデルを使用
             timeout = self.settings_manager.get_timeout() # 共通タイムアウトを使用
 
-            # QPixmap を base64 エンコードされた PNG データに変換
+            # 画像を base64 エンコードされた PNG データに変換
             buffer = QBuffer()
             buffer.open(QIODevice.ReadWrite)
             pixmap.save(buffer, "PNG")
