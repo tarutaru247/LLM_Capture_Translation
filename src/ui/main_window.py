@@ -346,8 +346,13 @@ class MainWindow(QMainWindow):
             
             # 表示位置を計算（キャプチャ領域の下中央）
             capture_rect = self.capture_window.rubber_band.geometry()
-            pos_x = capture_rect.x() + (capture_rect.width() / 2) - 200 # overlay幅の半分を引く
-            pos_y = capture_rect.y() + capture_rect.height() + 10 # 10px下に表示
+            # rubber_band の座標はキャプチャウィンドウ基準なので、グローバル座標に変換する
+            window_geo = self.capture_window.geometry()
+            global_x = window_geo.x() + capture_rect.x()
+            global_y = window_geo.y() + capture_rect.y()
+
+            pos_x = global_x + (capture_rect.width() / 2) - 200 # overlay幅の半分を引く
+            pos_y = global_y + capture_rect.height() + 10 # 10px下に表示
 
             self.overlay = TranslationOverlay(translated_text, position=(int(pos_x), int(pos_y)))
             self.overlay.show_and_fade_out()
