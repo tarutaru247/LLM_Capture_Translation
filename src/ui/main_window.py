@@ -270,6 +270,10 @@ class MainWindow(QMainWindow):
         # UIの表示状態を更新
         self._update_ui_visibility()
 
+        # 起動時に最小化設定が有効なら反映
+        if self.settings_manager.get_setting("ui", "start_minimized", False):
+            self.showMinimized()
+
     def _update_ui_visibility(self):
         """設定に基づいてUIの表示/非表示を切り替える"""
         transcribe_original = self.settings_manager.get_transcribe_original_text()

@@ -4,6 +4,7 @@ Settings manager module.
 import json
 import logging
 import os
+import time
 from typing import Any, Dict, Optional
 
 from ..utils.utils import get_config_dir
@@ -25,6 +26,7 @@ class SettingsManager:
         self.config_dir = get_config_dir()
         self.config_file = os.path.join(self.config_dir, "settings.json")
         self._last_loaded_mtime: float | None = None
+        self._last_mtime_check: float | None = None
         self.settings = self._load_settings()
 
     def _default_settings(self) -> Dict[str, Any]:
@@ -73,6 +75,10 @@ class SettingsManager:
 
     def _ensure_latest_settings(self) -> None:
         """Reload settings if the underlying file changed."""
+        now = time.monotonic()
+        if self._last_mtime_check is not None and (now - self._last_mtime_check) < 2:
+            return
+        self._last_mtime_check = now
         try:
             current_mtime = os.path.getmtime(self.config_file)
         except OSError:
