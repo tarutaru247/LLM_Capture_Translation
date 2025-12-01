@@ -1,7 +1,7 @@
 import logging
 import base64
 from io import BytesIO
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import QBuffer, QIODevice
 
 from openai import OpenAI, APIStatusError, APIConnectionError, AuthenticationError
@@ -52,7 +52,7 @@ class CombinedVisionTranslator(TranslatorService):
             return False
         return True
 
-    def translate_image(self, pixmap: QPixmap, target_lang: str = None) -> str:
+    def translate_image(self, pixmap: QPixmap | QImage | bytes, target_lang: str = None) -> str:
         """
         画像からテキストを抽出し、指定された言語に翻訳します。
 
@@ -66,9 +66,17 @@ class CombinedVisionTranslator(TranslatorService):
         if not self.is_available():
             return "エラー: Combined Vision Translator サービスが利用できません。APIキーを確認してください。"
 
-        if pixmap.isNull():
-            logger.error("有効な画像がありません。")
-            return ""
+        base64_image: str | None = None
+
+        if isinstance(pixmap, (bytes, bytearray)):
+            if not pixmap:
+                logger.error("有効な画像がありません。")
+                return ""
+            base64_image = base64.b64encode(pixmap).decode("utf-8")
+        else:
+            if pixmap.isNull():
+                logger.error("有効な画像がありません。")
+                return ""
 
         try:
             selected_api = self.settings_manager.get_selected_api()
@@ -76,12 +84,13 @@ class CombinedVisionTranslator(TranslatorService):
             model_name = self.settings_manager.get_model_for_api(selected_api)
             timeout = self.settings_manager.get_timeout()
 
-            # QPixmap を base64 エンコードされた PNG データに変換
-            buffer = QBuffer()
-            buffer.open(QIODevice.ReadWrite)
-            pixmap.save(buffer, "PNG")
-            base64_image = base64.b64encode(buffer.data().data()).decode('utf-8')
-            buffer.close()
+            if base64_image is None:
+                # QPixmap/QImage を base64 エンコードされた PNG データに変換
+                buffer = QBuffer()
+                buffer.open(QIODevice.ReadWrite)
+                pixmap.save(buffer, "PNG")
+                base64_image = base64.b64encode(buffer.data().data()).decode('utf-8')
+                buffer.close()
 
             if selected_api == "openai":
                 if not is_openai_vision_model(model_name):

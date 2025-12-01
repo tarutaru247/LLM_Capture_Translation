@@ -9,7 +9,7 @@ from ctypes import wintypes
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QLabel, QTextEdit, QComboBox,
                             QAction, QMenu, QToolBar, QStatusBar, QMessageBox, QApplication)
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QRect, QBuffer, QIODevice
 from PyQt5.QtGui import QIcon, QPixmap
 
 from ..ui.screen_capture import ScreenCaptureWindow
@@ -18,6 +18,7 @@ from ..ui.settings_dialog import SettingsDialog
 from ..ui.translation_overlay import TranslationOverlay
 from ..ocr.vision_ocr_service import VisionOCRService
 from ..translator.translation_manager import TranslationManager
+from ..utils.utils import sanitize_sensitive_data
 
 logger = logging.getLogger('ocr_translator')
 
@@ -60,6 +61,8 @@ class MainWindow(QMainWindow):
 
         # オーバーレイウィンドウ
         self.overlay = None
+
+        self._last_capture_global_rect: QRect | None = None
         
         # UIの初期化
         self._init_ui()
@@ -227,6 +230,10 @@ class MainWindow(QMainWindow):
         # UIの表示状態を更新
         self._update_ui_visibility()
 
+        # 起動時に最小化設定が有効なら反映
+        if self.settings_manager.get_setting("ui", "start_minimized", False):
+            self.showMinimized()
+
     def _update_ui_visibility(self):
         """設定に基づいてUIの表示/非表示を切り替える"""
         transcribe_original = self.settings_manager.get_transcribe_original_text()
@@ -296,13 +303,22 @@ class MainWindow(QMainWindow):
             self.show()
             return
 
+        # オーバーレイ位置計算用にキャプチャ矩形を保存（ウィンドウ破棄後も使えるようにする）
+        try:
+            capture_rect = self.capture_window.rubber_band.geometry()
+            window_geo = self.capture_window.geometry()
+            self._last_capture_global_rect = capture_rect.translated(window_geo.topLeft())
+        except Exception as exc:
+            logger.warning("キャプチャ矩形の保存に失敗: %s", sanitize_sensitive_data(str(exc)))
+            self._last_capture_global_rect = None
+
         self.captured_pixmap = pixmap
         self.status_bar.showMessage("キャプチャ完了、翻訳処理中...")
         self.progress_label.setText("翻訳処理中...")
         self.progress_label.show()
         QApplication.processEvents() # UIの更新を即時反映
 
-        # --- 翻訳処理 ---
+        # --- 翻訳処理（同期実行） ---
         target_lang = self._get_selected_target_language()
         transcribe_original = self.settings_manager.get_transcribe_original_text()
         self._update_ui_visibility()
@@ -310,22 +326,23 @@ class MainWindow(QMainWindow):
         translated_text = None
         error_message = None
 
+        # GUIスレッド内で実行することで安定性を優先（応答が重い場合は今後QThread化を再検討）
         if transcribe_original:
-            # フロー1: OCR -> 翻訳
             extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
             if extracted_text and not extracted_text.startswith("エラー:"):
                 self.extracted_text = extracted_text
                 self.original_text_edit.setPlainText(extracted_text)
-                translated_text = self.translation_manager.translate(extracted_text, target_lang)
+                translated_text = self.translation_manager.translate(
+                    extracted_text,
+                    target_lang=target_lang
+                )
             else:
                 error_message = extracted_text or "テキストの抽出に失敗しました。"
         else:
-            # フロー2: 画像から直接翻訳
             translated_text = self.translation_manager.translate_image(self.captured_pixmap, target_lang)
 
-        # --- 処理結果の表示 ---
         self.progress_label.hide()
-        self.show() # メインウィンドウを再表示
+        self.show()
 
         if translated_text and not translated_text.startswith("エラー:"):
             self.translated_text = translated_text
@@ -333,32 +350,8 @@ class MainWindow(QMainWindow):
             api_info = f"(API: {self.settings_manager.get_selected_api().upper()})"
             self.status_bar.showMessage(f"翻訳が完了しました。{api_info}", 5000)
             logger.info("翻訳成功")
-
-            # --- オーバーレイ表示 ---
-            # 以前のオーバーレイが残っていれば閉じる
-            try:
-                if self.overlay and self.overlay.isVisible():
-                    self.overlay.close()
-            except RuntimeError:
-                # このブロックは、前のオーバーレイが自動的に閉じた後に新しい翻訳が実行された場合に正常に到達します
-                logger.info("古いオーバーレイは自動的に破棄済みのため、新しいオーバーレイを表示します。")
-                self.overlay = None # 参照をクリア
-            
-            # 表示位置を計算（キャプチャ領域の下中央）
-            capture_rect = self.capture_window.rubber_band.geometry()
-            # rubber_band の座標はキャプチャウィンドウ基準なので、グローバル座標に変換する
-            window_geo = self.capture_window.geometry()
-            global_x = window_geo.x() + capture_rect.x()
-            global_y = window_geo.y() + capture_rect.y()
-
-            pos_x = global_x + (capture_rect.width() / 2) - 200 # overlay幅の半分を引く
-            pos_y = global_y + capture_rect.height() + 10 # 10px下に表示
-
-            self.overlay = TranslationOverlay(translated_text, position=(int(pos_x), int(pos_y)))
-            self.overlay.show_and_fade_out()
-
+            self._show_overlay(translated_text)
         else:
-            # エラー処理
             final_error = error_message or translated_text or "不明なエラーが発生しました。"
             self.status_bar.showMessage(f"エラー: {final_error}", 5000)
             self.translation_text_edit.setPlainText(f"翻訳に失敗しました。\n詳細: {final_error}")
@@ -393,6 +386,11 @@ class MainWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setText(self.translation_text_edit.toPlainText())
         self.status_bar.showMessage("翻訳をクリップボードにコピーしました", 3000)
+
+    def _show_overlay(self, translated_text: str):
+        """オーバーレイを安全に表示する"""
+        # ユーザー要望により、ポップアップ表示を無効化
+        return
     
     def _show_settings_dialog(self):
         """設定ダイアログを表示"""
