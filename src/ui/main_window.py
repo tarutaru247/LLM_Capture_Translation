@@ -5,7 +5,7 @@ import ctypes
 import logging
 from ctypes import wintypes
 
-from PyQt5.QtCore import QBuffer, QIODevice, QObject, QRect, QSize, Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QBuffer, QIODevice, QRect, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
@@ -40,10 +40,10 @@ VK_X = 0x58
 WM_HOTKEY = 0x0312
 
 
-class TranslationWorker(QObject):
+class TranslationWorkerThread(QThread):
     """OCR / 翻訳処理をバックグラウンドで実行する。"""
 
-    finished = pyqtSignal(dict)
+    result_ready = pyqtSignal(dict)
 
     def __init__(self, image_bytes: bytes, target_lang: str, transcribe_original: bool):
         super().__init__()
@@ -80,7 +80,7 @@ class TranslationWorker(QObject):
             logger.exception("バックグラウンド翻訳処理で予期せぬエラーが発生しました")
             result["error_message"] = str(exc)
 
-        self.finished.emit(result)
+        self.result_ready.emit(result)
 
 
 class ProcessingOverlay(QWidget):
@@ -163,8 +163,7 @@ class MainWindow(QMainWindow):
         self.translated_text = ""
         self.overlay = None
         self._last_capture_global_rect: QRect | None = None
-        self.worker_thread: QThread | None = None
-        self.worker: TranslationWorker | None = None
+        self.worker_thread: TranslationWorkerThread | None = None
 
         self._init_ui()
         self._register_global_hotkey()
@@ -388,20 +387,16 @@ class MainWindow(QMainWindow):
     def _start_translation_worker(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool):
         image_bytes = self._pixmap_to_png_bytes(pixmap)
         self._set_processing_state(True)
+        logger.info("バックグラウンド翻訳スレッドを開始します。")
 
-        self.worker_thread = QThread(self)
-        self.worker = TranslationWorker(image_bytes, target_lang, transcribe_original)
-        self.worker.moveToThread(self.worker_thread)
-        self.worker_thread.started.connect(self.worker.run)
-        self.worker.finished.connect(self._handle_translation_result)
-        self.worker.finished.connect(self.worker_thread.quit)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+        self.worker_thread = TranslationWorkerThread(image_bytes, target_lang, transcribe_original)
+        self.worker_thread.result_ready.connect(self._handle_translation_result)
         self.worker_thread.finished.connect(self._clear_worker_references)
+        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
         self.worker_thread.start()
 
     def _clear_worker_references(self):
-        self.worker = None
+        logger.info("バックグラウンド翻訳スレッドを終了しました。")
         self.worker_thread = None
 
     def _set_processing_state(self, is_processing: bool):
