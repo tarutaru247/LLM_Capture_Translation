@@ -15,7 +15,7 @@ logger = logging.getLogger("ocr_translator")
 
 SUPPORTED_API_TYPES = ("gemini",)
 DEFAULT_PRIMARY_MODEL = "gemini-3.1-flash-lite-preview"
-DEFAULT_FALLBACK_MODEL = "gemma-3-27b-it"
+DEFAULT_FALLBACK_MODEL = "gemma-4-26b-a4b-it"
 DEFAULT_LLM_MODE = "auto"
 
 
