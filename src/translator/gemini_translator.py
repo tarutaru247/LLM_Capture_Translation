@@ -11,6 +11,7 @@ from ..utils.google_ai import (
     get_google_model_candidates,
     should_retry_with_fallback,
 )
+from ..utils.localization import get_language_name
 from ..utils.settings_manager import SettingsManager
 from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
@@ -77,21 +78,18 @@ class GeminiTranslator(TranslatorService):
             genai.configure(api_key=self._api_key)
 
             if not target_lang:
-                target_lang = self.settings_manager.get_target_language()
+                target_lang = self.settings_manager.get_app_language()
 
-            language_names = {
-                "ja": "日本語",
-                "en": "英語",
-                "zh": "中国語",
-                "ko": "韓国語",
-                "fr": "フランス語",
-                "de": "ドイツ語",
-            }
-            target_language_name = language_names.get(target_lang, target_lang)
+            target_language_name = get_language_name(target_lang)
 
             prompt = (
-                f"次のテキストを{target_language_name}に翻訳してください。"
-                "翻訳のみを出力し、不必要な説明は省いてください。\n\n"
+                f"あなたの仕事は、入力テキストを必ず{target_language_name}へ翻訳することです。"
+                f"出力は翻訳後の{target_language_name}の文章だけにしてください。"
+                "元の文章は絶対に出力しないでください。"
+                "説明、注釈、見出し、引用符、\"翻訳:\" のような前置きも禁止です。"
+                "入力文に複数行がある場合は、意味の対応を保ちながら自然な改行で翻訳してください。"
+                f"入力がすでに{target_language_name}でも、余計な説明を付けず本文だけを返してください。\n\n"
+                "入力テキスト:\n"
                 f"{text}"
             )
 

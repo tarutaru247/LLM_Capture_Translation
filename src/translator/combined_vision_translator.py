@@ -12,6 +12,7 @@ from ..utils.google_ai import (
     get_google_model_candidates,
     should_retry_with_fallback,
 )
+from ..utils.localization import get_language_name
 from ..utils.settings_manager import SettingsManager
 from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
@@ -102,21 +103,18 @@ class CombinedVisionTranslator(TranslatorService):
             pil_image = Image.open(BytesIO(image_data))
 
             if not target_lang:
-                target_lang = self.settings_manager.get_target_language()
+                target_lang = self.settings_manager.get_app_language()
 
-            language_names = {
-                "ja": "日本語",
-                "en": "英語",
-                "zh": "中国語",
-                "ko": "韓国語",
-                "fr": "フランス語",
-                "de": "ドイツ語",
-            }
-            target_language_name = language_names.get(target_lang, target_lang)
+            target_language_name = get_language_name(target_lang)
 
             prompt_text = (
-                f"画像に写っているテキストを抽出し、{target_language_name} に翻訳してください。"
-                "抽出・翻訳後のテキストのみを出力してください。余計な説明は不要です。"
+                "あなたの仕事は画像内の文字を読み取り、翻訳後の文章だけを返すことです。"
+                f"画像に写っているテキストを正確に読み取り、必ず{target_language_name}に翻訳してください。"
+                f"出力は翻訳後の{target_language_name}の文章だけにしてください。"
+                "読み取った元の文字列、OCR結果、説明、注釈、見出し、引用符、"
+                "\"翻訳:\" や \"原文:\" のような前置きは絶対に出力しないでください。"
+                "複数行の画像なら、意味の対応を保ちながら自然な改行で翻訳してください。"
+                f"画像内テキストがすでに{target_language_name}でも、本文だけを返してください。"
             )
 
             logger.info(

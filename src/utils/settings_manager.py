@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, Optional
 
 from ..utils import secure_storage
+from ..utils.localization import get_system_default_language, normalize_app_language
 from ..utils.utils import get_config_dir
 
 logger = logging.getLogger("ocr_translator")
@@ -40,7 +41,7 @@ class SettingsManager:
                 "timeout": 60,
             },
             "language": {
-                "target_language": "ja",
+                "app_language": get_system_default_language(),
             },
             "ui": {
                 "theme": "system",
@@ -141,6 +142,17 @@ class SettingsManager:
 
         api_settings["fallback_model"] = DEFAULT_FALLBACK_MODEL
 
+        language_settings = settings.setdefault("language", {})
+        legacy_target = language_settings.get("target_language")
+        app_language = language_settings.get("app_language")
+        if not isinstance(app_language, str) or not app_language.strip():
+            if isinstance(legacy_target, str) and legacy_target.strip():
+                language_settings["app_language"] = normalize_app_language(legacy_target)
+            else:
+                language_settings["app_language"] = get_system_default_language()
+        else:
+            language_settings["app_language"] = normalize_app_language(app_language)
+
     def _sync_active_model(self, settings: Optional[Dict[str, Any]] = None) -> None:
         """Mirror the currently active model into the legacy `model` field."""
         if settings is None:
@@ -228,13 +240,21 @@ class SettingsManager:
         protected = secure_storage.protect_secret(api_key or "")
         return self.set_setting("api", "gemini_api_key", protected)
 
+    def get_app_language(self) -> str:
+        """Return configured app language code."""
+        return normalize_app_language(self.get_setting("language", "app_language", get_system_default_language()))
+
+    def set_app_language(self, language_code: str) -> bool:
+        """Persist app language code."""
+        return self.set_setting("language", "app_language", normalize_app_language(language_code))
+
     def get_target_language(self) -> str:
-        """Return configured translation target language code."""
-        return self.get_setting("language", "target_language")
+        """Compatibility wrapper: translation target follows the app language."""
+        return self.get_app_language()
 
     def set_target_language(self, language_code: str) -> bool:
-        """Persist translation target language code."""
-        return self.set_setting("language", "target_language", language_code)
+        """Compatibility wrapper: translation target follows the app language."""
+        return self.set_app_language(language_code)
 
     def get_selected_api(self) -> str:
         """Return the selected API provider name."""
