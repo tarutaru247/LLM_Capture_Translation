@@ -50,3 +50,7 @@ class TranslationManager:
             return self.gemini_translator
         logger.warning("不明なAPIタイプが指定されました: %s", api_type)
         return None
+
+    def get_last_used_image_model(self) -> str | None:
+        """直近の一括翻訳で使用したモデル名を返す。"""
+        return self.combined_vision_translator.get_last_used_model()

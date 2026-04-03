@@ -37,6 +37,7 @@ class CombinedVisionTranslator(TranslatorService):
 
     def __init__(self):
         self.settings_manager = SettingsManager()
+        self.last_used_model: str | None = None
         logger.info("CombinedVisionTranslatorを初期化しました")
 
     def translate(self, text: str, source_lang: str = None, target_lang: str = None) -> str:
@@ -99,6 +100,7 @@ class CombinedVisionTranslator(TranslatorService):
         if not self.is_available():
             return "エラー: 一括翻訳サービスが利用できません。Google APIキーを確認してください。"
 
+        self.last_used_model = None
         base64_image: str | None = None
 
         if isinstance(pixmap, (bytes, bytearray)):
@@ -136,9 +138,14 @@ class CombinedVisionTranslator(TranslatorService):
             )
             response, model_name = self._generate_with_model_fallback(prompt_text, pil_image, timeout)
             translated_text = (response.text or "").strip()
+            self.last_used_model = model_name
             logger.info("Google AI Vision 一括翻訳処理が完了しました（%s文字, model=%s）", len(translated_text), model_name)
             return translated_text
         except Exception as e:
             handle_exception(logger, e, "Google AI Vision 一括翻訳処理")
             safe_exc = sanitize_sensitive_data(str(e))
             return f"エラー: Google AI Vision 一括翻訳処理に失敗しました: {safe_exc}"
+
+    def get_last_used_model(self) -> str | None:
+        """直近の一括翻訳で使用したモデル名を返す。"""
+        return self.last_used_model

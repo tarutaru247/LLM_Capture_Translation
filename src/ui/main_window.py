@@ -280,7 +280,14 @@ class MainWindow(QMainWindow):
         if translated_text and not translated_text.startswith("エラー:"):
             self.translated_text = translated_text
             self.translation_text_edit.setPlainText(translated_text)
-            self.status_bar.showMessage(self.tr_ui("status_translation_done"), 5000)
+            last_used_model = self.translation_manager.get_last_used_image_model()
+            if last_used_model:
+                self.status_bar.showMessage(
+                    self.tr_ui("status_translation_done_with_model", model=last_used_model),
+                    5000,
+                )
+            else:
+                self.status_bar.showMessage(self.tr_ui("status_translation_done"), 5000)
             logger.info("翻訳成功")
             self._show_overlay(translated_text)
         else:
