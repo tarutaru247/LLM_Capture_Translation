@@ -3,6 +3,8 @@
 """
 import ctypes
 import logging
+import multiprocessing
+import queue
 import threading
 from ctypes import wintypes
 
@@ -26,6 +28,7 @@ from PyQt5.QtWidgets import (
 )
 
 from ..ocr.vision_ocr_service import VisionOCRService
+from ..translator.translation_job import run_translation_job_process
 from ..translator.translation_manager import TranslationManager
 from ..ui.screen_capture import ScreenCaptureWindow
 from ..ui.settings_dialog import SettingsDialog
@@ -44,40 +47,6 @@ WM_HOTKEY = 0x0312
 class TranslationResultBridge(QObject):
     """ワーカースレッドからメインスレッドへ結果を返す。"""
     result_ready = pyqtSignal(dict)
-
-
-def run_translation_job(image_bytes: bytes, target_lang: str, transcribe_original: bool) -> dict:
-    """Qt の外で翻訳処理を実行し、結果辞書を返す。"""
-    logger.info("バックグラウンド翻訳ジョブを実行します。")
-    result = {
-        "translated_text": None,
-        "extracted_text": "",
-        "error_message": None,
-        "last_used_model": None,
-    }
-
-    try:
-        if transcribe_original:
-            ocr_service = VisionOCRService()
-            translation_manager = TranslationManager()
-            extracted_text = ocr_service.extract_text(image_bytes)
-            if extracted_text and not extracted_text.startswith("エラー:"):
-                result["extracted_text"] = extracted_text
-                translated_text = translation_manager.translate(extracted_text, target_lang=target_lang)
-                result["translated_text"] = translated_text
-                result["last_used_model"] = translation_manager.get_last_used_image_model()
-            else:
-                result["error_message"] = extracted_text or "テキストの抽出に失敗しました。"
-        else:
-            translation_manager = TranslationManager()
-            translated_text = translation_manager.translate_image(image_bytes, target_lang)
-            result["translated_text"] = translated_text
-            result["last_used_model"] = translation_manager.get_last_used_image_model()
-    except Exception as exc:
-        logger.exception("バックグラウンド翻訳処理で予期せぬエラーが発生しました")
-        result["error_message"] = str(exc)
-
-    return result
 
 
 class ProcessingOverlay(QWidget):
@@ -160,6 +129,8 @@ class MainWindow(QMainWindow):
         self.translated_text = ""
         self.overlay = None
         self._last_capture_global_rect: QRect | None = None
+        self.worker_process: multiprocessing.Process | None = None
+        self.worker_queue = None
         self.worker_thread: threading.Thread | None = None
         self.result_bridge = TranslationResultBridge()
         self.result_bridge.result_ready.connect(self._handle_translation_result)
@@ -386,17 +357,48 @@ class MainWindow(QMainWindow):
     def _start_translation_worker(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool):
         image_bytes = self._pixmap_to_png_bytes(pixmap)
         self._set_processing_state(True)
-        logger.info("バックグラウンド翻訳スレッドを開始します。")
+        logger.info("バックグラウンド翻訳プロセスを開始します。")
 
-        def worker_entry():
-            result = run_translation_job(image_bytes, target_lang, transcribe_original)
-            self.result_bridge.result_ready.emit(result)
+        ctx = multiprocessing.get_context("spawn")
+        self.worker_queue = ctx.Queue()
+        self.worker_process = ctx.Process(
+            target=run_translation_job_process,
+            args=(image_bytes, target_lang, transcribe_original, self.worker_queue),
+            daemon=True,
+        )
+        self.worker_process.start()
 
-        self.worker_thread = threading.Thread(target=worker_entry, name="translation-worker", daemon=True)
+        self.worker_thread = threading.Thread(target=self._wait_for_worker_result, name="translation-worker", daemon=True)
         self.worker_thread.start()
 
+    def _wait_for_worker_result(self):
+        result = None
+        while True:
+            try:
+                result = self.worker_queue.get(timeout=0.5)
+                break
+            except queue.Empty:
+                if self.worker_process is not None and not self.worker_process.is_alive():
+                    break
+
+        if result is None:
+            exit_code = self.worker_process.exitcode if self.worker_process is not None else None
+            result = {
+                "translated_text": None,
+                "extracted_text": "",
+                "error_message": f"翻訳プロセスが異常終了しました。(exitcode={exit_code})",
+                "last_used_model": None,
+            }
+
+        self.result_bridge.result_ready.emit(result)
+
     def _clear_worker_references(self):
-        logger.info("バックグラウンド翻訳スレッドを終了しました。")
+        logger.info("バックグラウンド翻訳プロセスを終了しました。")
+        if self.worker_queue is not None:
+            self.worker_queue.close()
+            self.worker_queue = None
+        if self.worker_process is not None:
+            self.worker_process = None
         self.worker_thread = None
 
     def _set_processing_state(self, is_processing: bool):
