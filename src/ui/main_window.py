@@ -3,9 +3,10 @@
 """
 import ctypes
 import logging
+import threading
 from ctypes import wintypes
 
-from PyQt5.QtCore import QBuffer, QIODevice, QRect, QSize, Qt, QThread, pyqtSignal
+from PyQt5.QtCore import QBuffer, QIODevice, QObject, QRect, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
@@ -40,47 +41,43 @@ VK_X = 0x58
 WM_HOTKEY = 0x0312
 
 
-class TranslationWorkerThread(QThread):
-    """OCR / 翻訳処理をバックグラウンドで実行する。"""
-
+class TranslationResultBridge(QObject):
+    """ワーカースレッドからメインスレッドへ結果を返す。"""
     result_ready = pyqtSignal(dict)
 
-    def __init__(self, image_bytes: bytes, target_lang: str, transcribe_original: bool):
-        super().__init__()
-        self.image_bytes = image_bytes
-        self.target_lang = target_lang
-        self.transcribe_original = transcribe_original
 
-    def run(self):
-        result = {
-            "translated_text": None,
-            "extracted_text": "",
-            "error_message": None,
-            "last_used_model": None,
-        }
+def run_translation_job(image_bytes: bytes, target_lang: str, transcribe_original: bool) -> dict:
+    """Qt の外で翻訳処理を実行し、結果辞書を返す。"""
+    logger.info("バックグラウンド翻訳ジョブを実行します。")
+    result = {
+        "translated_text": None,
+        "extracted_text": "",
+        "error_message": None,
+        "last_used_model": None,
+    }
 
-        try:
-            if self.transcribe_original:
-                ocr_service = VisionOCRService()
-                translation_manager = TranslationManager()
-                extracted_text = ocr_service.extract_text(self.image_bytes)
-                if extracted_text and not extracted_text.startswith("エラー:"):
-                    result["extracted_text"] = extracted_text
-                    translated_text = translation_manager.translate(extracted_text, target_lang=self.target_lang)
-                    result["translated_text"] = translated_text
-                    result["last_used_model"] = translation_manager.get_last_used_image_model()
-                else:
-                    result["error_message"] = extracted_text or "テキストの抽出に失敗しました。"
-            else:
-                translation_manager = TranslationManager()
-                translated_text = translation_manager.translate_image(self.image_bytes, self.target_lang)
+    try:
+        if transcribe_original:
+            ocr_service = VisionOCRService()
+            translation_manager = TranslationManager()
+            extracted_text = ocr_service.extract_text(image_bytes)
+            if extracted_text and not extracted_text.startswith("エラー:"):
+                result["extracted_text"] = extracted_text
+                translated_text = translation_manager.translate(extracted_text, target_lang=target_lang)
                 result["translated_text"] = translated_text
                 result["last_used_model"] = translation_manager.get_last_used_image_model()
-        except Exception as exc:
-            logger.exception("バックグラウンド翻訳処理で予期せぬエラーが発生しました")
-            result["error_message"] = str(exc)
+            else:
+                result["error_message"] = extracted_text or "テキストの抽出に失敗しました。"
+        else:
+            translation_manager = TranslationManager()
+            translated_text = translation_manager.translate_image(image_bytes, target_lang)
+            result["translated_text"] = translated_text
+            result["last_used_model"] = translation_manager.get_last_used_image_model()
+    except Exception as exc:
+        logger.exception("バックグラウンド翻訳処理で予期せぬエラーが発生しました")
+        result["error_message"] = str(exc)
 
-        self.result_ready.emit(result)
+    return result
 
 
 class ProcessingOverlay(QWidget):
@@ -163,7 +160,9 @@ class MainWindow(QMainWindow):
         self.translated_text = ""
         self.overlay = None
         self._last_capture_global_rect: QRect | None = None
-        self.worker_thread: TranslationWorkerThread | None = None
+        self.worker_thread: threading.Thread | None = None
+        self.result_bridge = TranslationResultBridge()
+        self.result_bridge.result_ready.connect(self._handle_translation_result)
 
         self._init_ui()
         self._register_global_hotkey()
@@ -389,10 +388,11 @@ class MainWindow(QMainWindow):
         self._set_processing_state(True)
         logger.info("バックグラウンド翻訳スレッドを開始します。")
 
-        self.worker_thread = TranslationWorkerThread(image_bytes, target_lang, transcribe_original)
-        self.worker_thread.result_ready.connect(self._handle_translation_result)
-        self.worker_thread.finished.connect(self._clear_worker_references)
-        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+        def worker_entry():
+            result = run_translation_job(image_bytes, target_lang, transcribe_original)
+            self.result_bridge.result_ready.emit(result)
+
+        self.worker_thread = threading.Thread(target=worker_entry, name="translation-worker", daemon=True)
         self.worker_thread.start()
 
     def _clear_worker_references(self):
@@ -417,6 +417,7 @@ class MainWindow(QMainWindow):
             self.processing_overlay.hide()
 
     def _handle_translation_result(self, result: dict):
+        self._clear_worker_references()
         self._set_processing_state(False)
         self.show()
 
