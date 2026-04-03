@@ -5,14 +5,17 @@ import ctypes
 import logging
 from ctypes import wintypes
 
-from PyQt5.QtCore import QRect, QSize, Qt
+from PyQt5.QtCore import QBuffer, QIODevice, QObject, QRect, QSize, Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
+    QFrame,
+    QGridLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QStatusBar,
     QTextEdit,
@@ -37,6 +40,113 @@ VK_X = 0x58
 WM_HOTKEY = 0x0312
 
 
+class TranslationWorker(QObject):
+    """OCR / 翻訳処理をバックグラウンドで実行する。"""
+
+    finished = pyqtSignal(dict)
+
+    def __init__(self, image_bytes: bytes, target_lang: str, transcribe_original: bool):
+        super().__init__()
+        self.image_bytes = image_bytes
+        self.target_lang = target_lang
+        self.transcribe_original = transcribe_original
+
+    def run(self):
+        result = {
+            "translated_text": None,
+            "extracted_text": "",
+            "error_message": None,
+            "last_used_model": None,
+        }
+
+        try:
+            if self.transcribe_original:
+                ocr_service = VisionOCRService()
+                translation_manager = TranslationManager()
+                extracted_text = ocr_service.extract_text(self.image_bytes)
+                if extracted_text and not extracted_text.startswith("エラー:"):
+                    result["extracted_text"] = extracted_text
+                    translated_text = translation_manager.translate(extracted_text, target_lang=self.target_lang)
+                    result["translated_text"] = translated_text
+                    result["last_used_model"] = translation_manager.get_last_used_image_model()
+                else:
+                    result["error_message"] = extracted_text or "テキストの抽出に失敗しました。"
+            else:
+                translation_manager = TranslationManager()
+                translated_text = translation_manager.translate_image(self.image_bytes, self.target_lang)
+                result["translated_text"] = translated_text
+                result["last_used_model"] = translation_manager.get_last_used_image_model()
+        except Exception as exc:
+            logger.exception("バックグラウンド翻訳処理で予期せぬエラーが発生しました")
+            result["error_message"] = str(exc)
+
+        self.finished.emit(result)
+
+
+class ProcessingOverlay(QWidget):
+    """翻訳中であることを示す半透明オーバーレイ。"""
+
+    def __init__(self, parent: QWidget):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet("background-color: rgba(20, 24, 33, 170);")
+
+        panel = QFrame(self)
+        panel.setObjectName("processingPanel")
+        panel.setStyleSheet(
+            """
+            QFrame#processingPanel {
+                background-color: rgba(255, 255, 255, 240);
+                border: 1px solid #d9e2ef;
+                border-radius: 18px;
+            }
+            QLabel {
+                color: #203044;
+            }
+            QProgressBar {
+                border: 1px solid #cbd6e2;
+                border-radius: 8px;
+                background: #eef3f8;
+                min-height: 16px;
+            }
+            QProgressBar::chunk {
+                border-radius: 8px;
+                background-color: #2f7cf6;
+            }
+            """
+        )
+
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setSpacing(12)
+
+        self.title_label = QLabel()
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setStyleSheet("font-size: 22px; font-weight: 700;")
+        layout.addWidget(self.title_label)
+
+        self.detail_label = QLabel()
+        self.detail_label.setAlignment(Qt.AlignCenter)
+        self.detail_label.setWordWrap(True)
+        self.detail_label.setStyleSheet("font-size: 14px;")
+        layout.addWidget(self.detail_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setTextVisible(False)
+        layout.addWidget(self.progress_bar)
+
+        grid = QGridLayout(self)
+        grid.setContentsMargins(40, 40, 40, 40)
+        grid.addWidget(panel, 0, 0, alignment=Qt.AlignCenter)
+
+        self.hide()
+
+    def update_texts(self, title: str, detail: str):
+        self.title_label.setText(title)
+        self.detail_label.setText(detail)
+
+
 class MainWindow(QMainWindow):
     """アプリケーションのメインウィンドウ"""
 
@@ -53,6 +163,8 @@ class MainWindow(QMainWindow):
         self.translated_text = ""
         self.overlay = None
         self._last_capture_global_rect: QRect | None = None
+        self.worker_thread: QThread | None = None
+        self.worker: TranslationWorker | None = None
 
         self._init_ui()
         self._register_global_hotkey()
@@ -163,6 +275,8 @@ class MainWindow(QMainWindow):
         self.progress_label.hide()
         main_layout.addWidget(self.progress_label)
 
+        self.processing_overlay = ProcessingOverlay(central_widget)
+
         self._update_ui_visibility()
         self._apply_texts()
 
@@ -180,6 +294,10 @@ class MainWindow(QMainWindow):
         self.copy_original_button.setText(self.tr_ui("copy_button"))
         self.copy_translation_button.setText(self.tr_ui("copy_button"))
         self.progress_label.setText(self.tr_ui("progress_label"))
+        self.processing_overlay.update_texts(
+            self.tr_ui("processing_overlay_title"),
+            self.tr_ui("processing_overlay_detail"),
+        )
 
         self.file_menu.setTitle(self.tr_ui("file_menu"))
         self.exit_action.setText(self.tr_ui("exit_action"))
@@ -252,35 +370,73 @@ class MainWindow(QMainWindow):
 
         self.captured_pixmap = pixmap
         self.status_bar.showMessage(self.tr_ui("status_processing"))
-        self.progress_label.setText(self.tr_ui("progress_label"))
-        self.progress_label.show()
-        QApplication.processEvents()
 
         target_lang = self.settings_manager.get_app_language()
         transcribe_original = self.settings_manager.get_transcribe_original_text()
         self._update_ui_visibility()
+        self._start_translation_worker(pixmap, target_lang, transcribe_original)
 
-        translated_text = None
-        error_message = None
+    def _pixmap_to_png_bytes(self, pixmap: QPixmap) -> bytes:
+        qbuffer = QBuffer()
+        qbuffer.open(QIODevice.ReadWrite)
+        try:
+            pixmap.save(qbuffer, "PNG")
+            return bytes(qbuffer.data())
+        finally:
+            qbuffer.close()
 
-        if transcribe_original:
-            extracted_text = self.ocr_service.extract_text(self.captured_pixmap)
-            if extracted_text and not extracted_text.startswith("エラー:"):
-                self.extracted_text = extracted_text
-                self.original_text_edit.setPlainText(extracted_text)
-                translated_text = self.translation_manager.translate(extracted_text, target_lang=target_lang)
-            else:
-                error_message = extracted_text or self.tr_ui("capture_failed")
+    def _start_translation_worker(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool):
+        image_bytes = self._pixmap_to_png_bytes(pixmap)
+        self._set_processing_state(True)
+
+        self.worker_thread = QThread(self)
+        self.worker = TranslationWorker(image_bytes, target_lang, transcribe_original)
+        self.worker.moveToThread(self.worker_thread)
+        self.worker_thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self._handle_translation_result)
+        self.worker.finished.connect(self.worker_thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+        self.worker_thread.finished.connect(self._clear_worker_references)
+        self.worker_thread.start()
+
+    def _clear_worker_references(self):
+        self.worker = None
+        self.worker_thread = None
+
+    def _set_processing_state(self, is_processing: bool):
+        self.capture_button.setEnabled(not is_processing)
+        self.copy_original_button.setEnabled(not is_processing)
+        self.copy_translation_button.setEnabled(not is_processing)
+        self.settings_action.setEnabled(not is_processing)
+        self.exit_action.setEnabled(not is_processing)
+        self.progress_label.setVisible(is_processing)
+        self.processing_overlay.setVisible(is_processing)
+        self.processing_overlay.setGeometry(self.centralWidget().rect())
+        if is_processing:
+            self.processing_overlay.raise_()
+            self.progress_label.setText(self.tr_ui("progress_label"))
+            self.progress_label.show()
         else:
-            translated_text = self.translation_manager.translate_image(self.captured_pixmap, target_lang)
+            self.progress_label.hide()
+            self.processing_overlay.hide()
 
-        self.progress_label.hide()
+    def _handle_translation_result(self, result: dict):
+        self._set_processing_state(False)
         self.show()
+
+        extracted_text = result.get("extracted_text", "")
+        translated_text = result.get("translated_text")
+        error_message = result.get("error_message")
+        last_used_model = result.get("last_used_model")
+
+        if extracted_text:
+            self.extracted_text = extracted_text
+            self.original_text_edit.setPlainText(extracted_text)
 
         if translated_text and not translated_text.startswith("エラー:"):
             self.translated_text = translated_text
             self.translation_text_edit.setPlainText(translated_text)
-            last_used_model = self.translation_manager.get_last_used_image_model()
             if last_used_model:
                 self.status_bar.showMessage(
                     self.tr_ui("status_translation_done_with_model", model=last_used_model),
@@ -350,13 +506,25 @@ class MainWindow(QMainWindow):
         if eventType == b"windows_generic_MSG":
             msg = wintypes.MSG.from_address(message.__int__())
             if msg.message == WM_HOTKEY and msg.wParam == self.hotkey_id:
+                if self.worker_thread is not None:
+                    logger.info("翻訳処理中のためホットキー入力を無視しました。")
+                    return True, 0
                 logger.info("グローバルホットキーが検出されました。")
                 self.start_capture()
                 return True, 0
         return super().nativeEvent(eventType, message)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.processing_overlay.setGeometry(self.centralWidget().rect())
+
     def closeEvent(self, event):
+        if self.worker_thread is not None:
+            self.status_bar.showMessage(self.tr_ui("status_processing_locked"), 3000)
+            event.ignore()
+            return
         self._unregister_global_hotkey()
+        self.settings_manager.reload_settings()
         self.settings_manager.save_settings()
         logger.info("アプリケーションを終了します。")
         event.accept()
