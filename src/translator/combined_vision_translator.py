@@ -1,13 +1,15 @@
 import base64
 import logging
 from io import BytesIO
+from pathlib import Path
 
-import google.generativeai as genai
 from PIL import Image
 from PyQt5.QtCore import QBuffer, QIODevice
 from PyQt5.QtGui import QImage, QPixmap
 
 from ..utils.google_ai import (
+    build_minimal_thinking_generation_config,
+    create_google_client,
     format_model_chain,
     get_google_model_candidates,
     should_retry_with_fallback,
@@ -18,6 +20,7 @@ from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
 
 logger = logging.getLogger("ocr_translator")
+PROMPT_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "prompts" / "vision_translation_prompt.md"
 
 
 class CombinedVisionTranslator(TranslatorService):
@@ -43,11 +46,15 @@ class CombinedVisionTranslator(TranslatorService):
         """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
         model_candidates = get_google_model_candidates(self.settings_manager)
         last_error: Exception | None = None
+        client = create_google_client(self.settings_manager.get_api_key("gemini") or "")
 
         for index, model_name in enumerate(model_candidates):
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content([prompt_text, pil_image], request_options={"timeout": timeout})
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt_text, pil_image],
+                    config=build_minimal_thinking_generation_config(),
+                )
                 if index > 0:
                     logger.warning("Vision一括翻訳でモデルを %s にフォールバックしました。", model_name)
                 return response, model_name
@@ -70,6 +77,15 @@ class CombinedVisionTranslator(TranslatorService):
             raise last_error
         raise RuntimeError("利用可能なGoogle AIモデルが見つかりません。")
 
+    def _build_prompt_text(self, target_language_name: str) -> str:
+        """Markdown テンプレートから一括翻訳プロンプトを読み込む。"""
+        try:
+            template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+        except OSError as exc:
+            logger.error("一括翻訳プロンプトの読み込みに失敗しました: %s", sanitize_sensitive_data(str(exc)))
+            raise RuntimeError("一括翻訳プロンプトを読み込めませんでした。") from exc
+        return template.format(target_language_name=target_language_name)
+
     def translate_image(self, pixmap: QPixmap | QImage | bytes, target_lang: str = None) -> str:
         """画像からテキストを抽出し、指定された言語に翻訳します。"""
         if not self.is_available():
@@ -88,7 +104,6 @@ class CombinedVisionTranslator(TranslatorService):
                 return ""
 
         try:
-            api_key = self.settings_manager.get_api_key("gemini")
             timeout = self.settings_manager.get_timeout()
 
             if base64_image is None:
@@ -98,7 +113,6 @@ class CombinedVisionTranslator(TranslatorService):
                 base64_image = base64.b64encode(buffer.data().data()).decode("utf-8")
                 buffer.close()
 
-            genai.configure(api_key=api_key)
             image_data = base64.b64decode(base64_image)
             pil_image = Image.open(BytesIO(image_data))
 
@@ -106,16 +120,7 @@ class CombinedVisionTranslator(TranslatorService):
                 target_lang = self.settings_manager.get_app_language()
 
             target_language_name = get_language_name(target_lang)
-
-            prompt_text = (
-                "あなたの仕事は画像内の文字を読み取り、翻訳後の文章だけを返すことです。"
-                f"画像に写っているテキストを正確に読み取り、必ず{target_language_name}に翻訳してください。"
-                f"出力は翻訳後の{target_language_name}の文章だけにしてください。"
-                "読み取った元の文字列、OCR結果、説明、注釈、見出し、引用符、"
-                "\"翻訳:\" や \"原文:\" のような前置きは絶対に出力しないでください。"
-                "複数行の画像なら、意味の対応を保ちながら自然な改行で翻訳してください。"
-                f"画像内テキストがすでに{target_language_name}でも、本文だけを返してください。"
-            )
+            prompt_text = self._build_prompt_text(target_language_name)
 
             logger.info(
                 "Google AI Vision一括翻訳を実行します。モデル候補: %s",

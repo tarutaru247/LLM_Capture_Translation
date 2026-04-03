@@ -42,13 +42,17 @@ def create_executable():
         subprocess.call([sys.executable, "-m", "pip", "install", "pyinstaller"])
     
     # 必要なライブラリがインストールされているか確認
-    required_packages = ["PyQt5", "Pillow", "openai", "google-generativeai"]
-    for package in required_packages:
+    required_packages = [
+        ("PyQt5", "PyQt5"),
+        ("PIL", "Pillow"),
+        ("google.genai", "google-genai"),
+    ]
+    for import_name, package_name in required_packages:
         try:
-            __import__(package)
+            __import__(import_name)
         except ImportError:
-            print(f"{package}がインストールされていません。インストールします...")
-            subprocess.call([sys.executable, "-m", "pip", "install", package])
+            print(f"{package_name}がインストールされていません。インストールします...")
+            subprocess.call([sys.executable, "-m", "pip", "install", package_name])
     
     # PyInstallerコマンドの構築
     pyinstaller_cmd = [

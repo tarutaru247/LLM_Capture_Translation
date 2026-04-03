@@ -2,12 +2,12 @@ import base64
 import logging
 from io import BytesIO
 
-import google.generativeai as genai
 from PIL import Image
 from PyQt5.QtCore import QBuffer, QIODevice
 from PyQt5.QtGui import QImage, QPixmap
 
 from ..utils.google_ai import (
+    create_google_client,
     format_model_chain,
     get_google_model_candidates,
     should_retry_with_fallback,
@@ -39,11 +39,14 @@ class VisionOCRService(OCRService):
         """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
         model_candidates = get_google_model_candidates(self.settings_manager)
         last_error: Exception | None = None
+        client = create_google_client(self.settings_manager.get_api_key("gemini") or "")
 
         for index, model_name in enumerate(model_candidates):
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content([prompt_text, pil_image], request_options={"timeout": timeout})
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[prompt_text, pil_image],
+                )
                 if index > 0:
                     logger.warning("Vision OCR でモデルを %s にフォールバックしました。", model_name)
                 return response, model_name
@@ -84,7 +87,6 @@ class VisionOCRService(OCRService):
                 return ""
 
         try:
-            api_key = self.settings_manager.get_api_key("gemini")
             timeout = self.settings_manager.get_timeout()
 
             if base64_image is None:
@@ -94,7 +96,6 @@ class VisionOCRService(OCRService):
                 base64_image = base64.b64encode(buffer.data().data()).decode("utf-8")
                 buffer.close()
 
-            genai.configure(api_key=api_key)
             image_data = base64.b64decode(base64_image)
             pil_image = Image.open(BytesIO(image_data))
 

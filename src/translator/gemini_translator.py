@@ -1,12 +1,11 @@
 """
-Translator that uses the Google Gemini API.
+Translator that uses the Google GenAI SDK.
 """
 import logging
 from typing import Optional
 
-import google.generativeai as genai
-
 from ..utils.google_ai import (
+    create_google_client,
     format_model_chain,
     get_google_model_candidates,
     should_retry_with_fallback,
@@ -28,18 +27,20 @@ class GeminiTranslator(TranslatorService):
         logger.info("GeminiTranslatorを初期化しました")
 
     def _refresh_api_key(self) -> None:
-        """設定ファイルから最新の API キーを取得する."""
         self._api_key = self.settings_manager.get_api_key("gemini")
 
-    def _generate_content_with_model_fallback(self, prompt, timeout: int):
+    def _generate_content_with_model_fallback(self, prompt: str, timeout: int):
         """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
         model_candidates = get_google_model_candidates(self.settings_manager)
         last_error: Exception | None = None
+        client = create_google_client(self._api_key or "")
 
         for index, model_name in enumerate(model_candidates):
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt, request_options={"timeout": timeout})
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
                 if index > 0:
                     logger.warning("Google AI モデルを %s にフォールバックしました。", model_name)
                 return response, model_name
@@ -63,7 +64,6 @@ class GeminiTranslator(TranslatorService):
         raise RuntimeError("利用可能なGoogle AIモデルが見つかりません。")
 
     def translate(self, text, source_lang=None, target_lang=None):
-        """Google AI を使用してテキストを翻訳する."""
         self._refresh_api_key()
 
         if not text:
@@ -75,21 +75,26 @@ class GeminiTranslator(TranslatorService):
             return "エラー: Google APIキーが設定されていません。設定画面でAPIキーを設定してください。"
 
         try:
-            genai.configure(api_key=self._api_key)
-
             if not target_lang:
                 target_lang = self.settings_manager.get_app_language()
 
             target_language_name = get_language_name(target_lang)
 
             prompt = (
-                f"あなたの仕事は、入力テキストを必ず{target_language_name}へ翻訳することです。"
-                f"出力は翻訳後の{target_language_name}の文章だけにしてください。"
-                "元の文章は絶対に出力しないでください。"
-                "説明、注釈、見出し、引用符、\"翻訳:\" のような前置きも禁止です。"
-                "入力文に複数行がある場合は、意味の対応を保ちながら自然な改行で翻訳してください。"
-                f"入力がすでに{target_language_name}でも、余計な説明を付けず本文だけを返してください。\n\n"
-                "入力テキスト:\n"
+                f"# 今から与えられる文字列を全て{target_language_name}に翻訳してください\n\n"
+                "## ルール\n\n"
+                "- 出力される文字は翻訳後の文字列のみになります。他の一切の文字が混入することは禁止されています\n\n"
+                "- 文章の意味の説明は不要です。翻訳後の文章をそのまま出力してください\n\n"
+                "- 固有名詞は無理に意訳せず音訳してください\n\n"
+                f"- 入力文字が不明瞭で読めない場合は、推測せず不明瞭で読めないという文を{target_language_name}で出力してください。この時のみ例外的に翻訳後文章以外の出力が許可されます\n\n"
+                "## 例\n"
+                "出力先言語 : 日本語\n"
+                "入力文章 : Hello, how are you doing?\n"
+                "出力 : こんにちは、調子はどうですか？\n\n"
+                "出力先言語 : 英語\n"
+                "入力文章 : 今日は雨降るらしいから傘持っていった方がいいよ\n"
+                "出力 : It's supposed to rain today, so you should take an umbrella.\n\n"
+                "## 入力文章\n"
                 f"{text}"
             )
 
@@ -112,20 +117,17 @@ class GeminiTranslator(TranslatorService):
             return f"エラー: {error_msg}"
 
     def is_available(self):
-        """Google API が利用可能かどうかを確認する."""
         self._refresh_api_key()
         return bool(self._api_key)
 
     def verify_api_key(self, api_key):
-        """指定された API キーが Google AI で有効かどうかを検証する."""
         if not api_key:
             return False, "APIキーが入力されていません。"
 
         try:
-            genai.configure(api_key=api_key)
+            client = create_google_client(api_key)
             model_name = self.settings_manager.get_model_candidates()[0]
-            model = genai.GenerativeModel(model_name)
-            model.generate_content("test", request_options={"timeout": 5})
+            client.models.generate_content(model=model_name, contents="test")
             logger.info("Google APIキーの検証に成功しました。")
             return True, ""
         except Exception as exc:
