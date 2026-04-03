@@ -149,7 +149,7 @@ class MainWindow(QMainWindow):
         
         # データ送信に関する注意書き
         self.data_notice_label = QLabel(
-            "【注意】選択した画面領域の画像および抽出テキストは、設定されたAIサービス(OpenAI / Google Gemini)へ送信されます。機密情報は含めないでください。"
+            "【注意】選択した画面領域の画像および抽出テキストは、Google AI へ送信されます。機密情報は含めないでください。"
         )
         self.data_notice_label.setWordWrap(True)
         self.data_notice_label.setStyleSheet(
@@ -347,7 +347,7 @@ class MainWindow(QMainWindow):
         if translated_text and not translated_text.startswith("エラー:"):
             self.translated_text = translated_text
             self.translation_text_edit.setPlainText(translated_text)
-            api_info = f"(API: {self.settings_manager.get_selected_api().upper()})"
+            api_info = "(API: GOOGLE)"
             self.status_bar.showMessage(f"翻訳が完了しました。{api_info}", 5000)
             logger.info("翻訳成功")
             self._show_overlay(translated_text)

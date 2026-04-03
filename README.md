@@ -3,7 +3,7 @@
 ![スクショAI翻訳](https://user-images.githubusercontent.com/your-account/your-repo/your-image.png)  <!-- TODO: Add a screenshot of the application -->
 
 「スクショAI翻訳」は、PC画面上の任意の範囲をキャプチャし、写っている文字をAIが認識して翻訳するWindows向けアプリケーションです。
-最新のAIモデル（OpenAI APIまたはGoogle Gemini API）を活用し、高精度なOCRと翻訳を実現します。
+Google AI を活用し、高精度なOCRと翻訳を実現します。
 
 ## 主な機能
 
@@ -11,9 +11,9 @@
 - **AIによるOCR・翻訳**:
     - **一括翻訳モード (デフォルト)**: キャプチャした画像から直接翻訳結果を生成します。API呼び出しが1回で済むため、高速かつ効率的です。
     - **文字起こしモード**: 画像から抽出した原文を確認してから、翻訳結果を見ることができます。原文のコピーも可能です。
-- **マルチAPI対応**: OpenAI (GPTシリーズ) と Google (Geminiシリーズ) のAPIを切り替えて使用できます。
+- **Google AI 統一**: Google API に一本化し、通常は `gemini-2.5-flash-lite`、混雑時などは `gemma-3-27b-it` へ自動で切り替えます。
 - **多言語対応**: 日本語、英語、中国語、韓国語、フランス語、ドイツ語への翻訳に対応しています。
-- **カスタマイズ可能な設定**: 使用するAIモデル名やAPIのタイムアウト時間など、詳細な設定が可能です。
+- **カスタマイズ可能な設定**: 通常は自動選択のまま使えます。必要な場合だけ、任意の Google モデル名を直接指定できます。
 
 ## 動作環境
 
@@ -77,7 +77,6 @@ python build_exe.py
     ├── translator/
     │   ├── combined_vision_translator.py
     │   ├── gemini_translator.py
-    │   ├── openai_translator.py
     │   ├── translation_manager.py
     │   └── translator_service.py
     ├── ui/
@@ -95,7 +94,7 @@ python build_exe.py
 - APIの利用には、各サービスプロバイダが定める料金が発生する場合があります。ご利用の際は料金体系を必ずご確認ください。
 - 本アプリケーションの使用によって生じたいかなる損害についても、開発者は責任を負いません。
 
-- GPT-5 系モデルを利用する場合は OpenAI Responses API 経由のみサポートしています。設定ダイアログの GPT-5 セクションで推論モード・出力詳細度・最大出力トークンを調整すると、/v1/responses 呼び出し時に自動反映されます。
+- 設定画面では Google API キーと LLM モードのみを扱います。`カスタム` を選ぶと、Google AI に渡すモデル名を直接入力できます。
 
 ## ライセンス
 

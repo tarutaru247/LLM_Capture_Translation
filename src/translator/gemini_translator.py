@@ -6,6 +6,11 @@ from typing import Optional
 
 import google.generativeai as genai
 
+from ..utils.google_ai import (
+    format_model_chain,
+    get_google_model_candidates,
+    should_retry_with_fallback,
+)
 from ..utils.settings_manager import SettingsManager
 from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
@@ -14,7 +19,7 @@ logger = logging.getLogger("ocr_translator")
 
 
 class GeminiTranslator(TranslatorService):
-    """Google Gemini API を利用した翻訳サービス."""
+    """Google AI を利用した翻訳サービス."""
 
     def __init__(self) -> None:
         self.settings_manager = SettingsManager()
@@ -25,8 +30,39 @@ class GeminiTranslator(TranslatorService):
         """設定ファイルから最新の API キーを取得する."""
         self._api_key = self.settings_manager.get_api_key("gemini")
 
+    def _generate_content_with_model_fallback(self, prompt, timeout: int):
+        """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
+        model_candidates = get_google_model_candidates(self.settings_manager)
+        last_error: Exception | None = None
+
+        for index, model_name in enumerate(model_candidates):
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt, request_options={"timeout": timeout})
+                if index > 0:
+                    logger.warning("Google AI モデルを %s にフォールバックしました。", model_name)
+                return response, model_name
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Google AI モデル %s の呼び出しに失敗しました: %s",
+                    model_name,
+                    sanitize_sensitive_data(str(exc)),
+                )
+                can_retry = (
+                    index < len(model_candidates) - 1
+                    and self.settings_manager.get_llm_mode() == "auto"
+                    and should_retry_with_fallback(exc)
+                )
+                if not can_retry:
+                    raise
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("利用可能なGoogle AIモデルが見つかりません。")
+
     def translate(self, text, source_lang=None, target_lang=None):
-        """Gemini API を使用してテキストを翻訳する."""
+        """Google AI を使用してテキストを翻訳する."""
         self._refresh_api_key()
 
         if not text:
@@ -34,10 +70,8 @@ class GeminiTranslator(TranslatorService):
             return ""
 
         if not self._api_key:
-            logger.error("Gemini APIキーが設定されていません")
-            return "エラー: Gemini APIキーが設定されていません。設定画面でAPIキーを設定してください。"
-
-        model_name = self._resolve_model_name()
+            logger.error("Google APIキーが設定されていません")
+            return "エラー: Google APIキーが設定されていません。設定画面でAPIキーを設定してください。"
 
         try:
             genai.configure(api_key=self._api_key)
@@ -61,52 +95,45 @@ class GeminiTranslator(TranslatorService):
                 f"{text}"
             )
 
-            logger.info("Gemini APIによる翻訳を実行します（対象言語: %s）", target_language_name)
+            logger.info(
+                "Google AIによる翻訳を実行します（対象言語: %s, モデル候補: %s）",
+                target_language_name,
+                format_model_chain(get_google_model_candidates(self.settings_manager)),
+            )
 
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt, request_options={"timeout": self.settings_manager.get_timeout()})
-
-            translated_text = response.text.strip()
-            logger.info("翻訳が完了しました")
+            response, model_name = self._generate_content_with_model_fallback(
+                prompt,
+                self.settings_manager.get_timeout(),
+            )
+            translated_text = (response.text or "").strip()
+            logger.info("翻訳が完了しました。使用モデル: %s", model_name)
             return translated_text
 
         except Exception as exc:
-            error_msg = handle_exception(logger, exc, "Gemini APIでの翻訳")
+            error_msg = handle_exception(logger, exc, "Google AIでの翻訳")
             return f"エラー: {error_msg}"
 
     def is_available(self):
-        """Gemini API が利用可能かどうかを確認する."""
+        """Google API が利用可能かどうかを確認する."""
         self._refresh_api_key()
         return bool(self._api_key)
 
     def verify_api_key(self, api_key):
-        """指定された API キーが Gemini で有効かどうかを検証する."""
+        """指定された API キーが Google AI で有効かどうかを検証する."""
         if not api_key:
             return False, "APIキーが入力されていません。"
 
         try:
             genai.configure(api_key=api_key)
-            model_name = self._resolve_model_name()
+            model_name = self.settings_manager.get_model_candidates()[0]
             model = genai.GenerativeModel(model_name)
             model.generate_content("test", request_options={"timeout": 5})
-            logger.info("Google Gemini APIキーの検証に成功しました。")
+            logger.info("Google APIキーの検証に成功しました。")
             return True, ""
         except Exception as exc:
             safe_exc = sanitize_sensitive_data(str(exc))
-            error_msg = f"Google Gemini APIキーの検証中にエラーが発生しました: {safe_exc}"
+            error_msg = f"Google APIキーの検証中にエラーが発生しました: {safe_exc}"
             logger.error(error_msg)
             if "timeout" in safe_exc.lower():
                 return False, f"APIへの接続エラー: {safe_exc} (タイムアウトの可能性あり)"
             return False, error_msg
-
-    def _resolve_model_name(self) -> str:
-        """Return a Gemini-compatible model name, falling back to default if necessary."""
-        configured_model = self.settings_manager.get_model_for_api("gemini")
-        if configured_model and configured_model.lower().startswith("gemini"):
-            return configured_model
-        # Fallback to a safe default Gemini model if the configured one is meant for OpenAI (e.g., GPT-5).
-        logger.warning(
-            "Geminiモデル以外 (%s) が設定されていたため、Geminiデフォルトモデルを使用します。",
-            configured_model,
-        )
-        return "gemini-pro"

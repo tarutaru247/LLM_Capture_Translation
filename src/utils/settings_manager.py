@@ -1,4 +1,4 @@
-﻿"""
+"""
 Settings manager module.
 """
 import json
@@ -7,16 +7,15 @@ import os
 import time
 from typing import Any, Dict, Optional
 
-from ..utils.utils import get_config_dir
 from ..utils import secure_storage
+from ..utils.utils import get_config_dir
 
 logger = logging.getLogger("ocr_translator")
 
-SUPPORTED_API_TYPES = ("openai", "gemini")
-DEFAULT_MODELS_BY_API = {
-    "openai": "gpt-5-nano",
-    "gemini": "gemini-flash-lite-latest",
-}
+SUPPORTED_API_TYPES = ("gemini",)
+DEFAULT_PRIMARY_MODEL = "gemini-2.5-flash-lite"
+DEFAULT_FALLBACK_MODEL = "gemma-3-27b-it"
+DEFAULT_LLM_MODE = "auto"
 
 
 class SettingsManager:
@@ -32,23 +31,21 @@ class SettingsManager:
     def _default_settings(self) -> Dict[str, Any]:
         return {
             "api": {
-                "selected_api": "openai",  # 'openai' or 'gemini' (used for combined OCR as well)
-                "openai_api_key": "",
+                "selected_api": "gemini",
                 "gemini_api_key": "",
-                "model": DEFAULT_MODELS_BY_API["openai"],  # legacy field mirrors the selected API model
-                "models_by_api": DEFAULT_MODELS_BY_API.copy(),  # remember per-provider models
-                "timeout": 60,  # API timeout in seconds
-                "reasoning_effort": "medium",
-                "verbosity": "medium",
-                "max_output_tokens": 1024,
+                "llm_mode": DEFAULT_LLM_MODE,
+                "custom_model": "",
+                "model": DEFAULT_PRIMARY_MODEL,
+                "fallback_model": DEFAULT_FALLBACK_MODEL,
+                "timeout": 60,
             },
             "language": {
-                "target_language": "ja",  # default translation target
+                "target_language": "ja",
             },
             "ui": {
                 "theme": "system",
                 "start_minimized": False,
-                "transcribe_original_text": False,  # flag for transcription-first workflow
+                "transcribe_original_text": False,
             },
         }
 
@@ -69,8 +66,10 @@ class SettingsManager:
         except Exception as exc:
             logger.error("設定ファイルの読み込みでエラーが発生しました: %s", exc)
             self._last_loaded_mtime = None
+
+        self._migrate_legacy_settings(settings)
         self._normalize_api_key_storage(settings)
-        self._ensure_model_map(settings)
+        self._sync_active_model(settings)
         return settings
 
     def _ensure_latest_settings(self) -> None:
@@ -100,37 +99,65 @@ class SettingsManager:
             else:
                 dest[key] = value
 
-    def _ensure_model_map(self, settings: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-        """
-        Ensure that per-API model values exist and are synchronized with the legacy single model field.
-        """
+    def _migrate_legacy_settings(self, settings: Optional[Dict[str, Any]] = None) -> None:
+        """Translate older OpenAI/Gemini mixed settings into the new Google-only schema."""
+        if settings is None:
+            settings = self.settings
+        if not settings:
+            return
+
+        api_settings = settings.setdefault("api", {})
+        api_settings["selected_api"] = "gemini"
+
+        llm_mode = api_settings.get("llm_mode")
+        if llm_mode not in ("auto", "custom"):
+            api_settings["llm_mode"] = DEFAULT_LLM_MODE
+
+        custom_model = api_settings.get("custom_model")
+        if not isinstance(custom_model, str):
+            custom_model = ""
+
+        legacy_candidate = ""
+        models_by_api = api_settings.get("models_by_api")
+        if isinstance(models_by_api, dict):
+            value = models_by_api.get("gemini")
+            if isinstance(value, str):
+                legacy_candidate = value.strip()
+
+        if not legacy_candidate:
+            legacy_model = api_settings.get("model")
+            if isinstance(legacy_model, str):
+                legacy_candidate = legacy_model.strip()
+
+        if not custom_model and legacy_candidate:
+            lowered = legacy_candidate.lower()
+            if lowered.startswith("gemini") or lowered.startswith("gemma"):
+                if legacy_candidate not in (DEFAULT_PRIMARY_MODEL, DEFAULT_FALLBACK_MODEL):
+                    api_settings["llm_mode"] = "custom"
+                    api_settings["custom_model"] = legacy_candidate
+
+        if api_settings["llm_mode"] != "custom":
+            api_settings["custom_model"] = ""
+
+        api_settings["fallback_model"] = DEFAULT_FALLBACK_MODEL
+
+    def _sync_active_model(self, settings: Optional[Dict[str, Any]] = None) -> None:
+        """Mirror the currently active model into the legacy `model` field."""
         if settings is None:
             if self.settings is None:
                 self.settings = self._default_settings()
             settings = self.settings
 
         api_settings = settings.setdefault("api", {})
-        models = api_settings.get("models_by_api")
-        if not isinstance(models, dict):
-            models = {}
-            api_settings["models_by_api"] = models
+        llm_mode = api_settings.get("llm_mode", DEFAULT_LLM_MODE)
+        custom_model = api_settings.get("custom_model", "")
 
-        selected_api = (api_settings.get("selected_api") or "openai").lower()
-        if selected_api not in SUPPORTED_API_TYPES:
-            selected_api = "openai"
-            api_settings["selected_api"] = selected_api
+        active_model = DEFAULT_PRIMARY_MODEL
+        if llm_mode == "custom" and isinstance(custom_model, str) and custom_model.strip():
+            active_model = custom_model.strip()
 
-        legacy_model = api_settings.get("model")
-        if isinstance(legacy_model, str) and legacy_model.strip():
-            models.setdefault(selected_api, legacy_model.strip())
-
-        for api_type, default_model in DEFAULT_MODELS_BY_API.items():
-            current = models.get(api_type)
-            if not isinstance(current, str) or not current.strip():
-                models[api_type] = default_model
-
-        api_settings["model"] = models.get(selected_api, DEFAULT_MODELS_BY_API[selected_api])
-        return models
+        api_settings["model"] = active_model
+        api_settings["fallback_model"] = DEFAULT_FALLBACK_MODEL
 
     def _normalize_api_key_storage(self, settings: Optional[Dict[str, Any]] = None) -> None:
         """Ensure APIキーがDPAPI形式で保存されるよう整備する。"""
@@ -138,8 +165,9 @@ class SettingsManager:
             settings = self.settings
         if not settings:
             return
+
         api_settings = settings.setdefault("api", {})
-        for field in ("openai_api_key", "gemini_api_key"):
+        for field in ("gemini_api_key", "openai_api_key"):
             value = api_settings.get(field)
             if not value or (isinstance(value, str) and value.startswith("dpapi:")):
                 continue
@@ -148,7 +176,7 @@ class SettingsManager:
     def save_settings(self) -> bool:
         """Persist current settings to disk."""
         try:
-            self._ensure_model_map()
+            self._sync_active_model()
             with open(self.config_file, "w", encoding="utf-8") as fh:
                 json.dump(self.settings, fh, indent=4, ensure_ascii=False)
             try:
@@ -184,29 +212,22 @@ class SettingsManager:
             logger.warning("設定カテゴリが見つかりません: %s", category)
             return False
 
-    def get_api_key(self, api_type: str) -> str | None:
+    def get_api_key(self, api_type: str = "gemini") -> str | None:
         """Return API key for the requested provider."""
-        api_type_lower = api_type.lower()
-        if api_type_lower == "openai":
-            stored = self.get_setting("api", "openai_api_key")
-            return secure_storage.unprotect_secret(stored)
-        if api_type_lower == "gemini":
-            stored = self.get_setting("api", "gemini_api_key")
-            return secure_storage.unprotect_secret(stored)
-        logger.warning("未対応のAPIキーが要求されました: %s", api_type)
-        return None
+        if (api_type or "gemini").lower() != "gemini":
+            logger.warning("未対応のAPIキーが要求されました: %s", api_type)
+            return None
+        stored = self.get_setting("api", "gemini_api_key")
+        return secure_storage.unprotect_secret(stored)
 
     def set_api_key(self, api_type: str, api_key: str) -> bool:
         """Store API key for the requested provider."""
-        api_type_lower = api_type.lower()
-        if api_type_lower == "openai":
-            protected = secure_storage.protect_secret(api_key or "")
-            return self.set_setting("api", "openai_api_key", protected)
-        if api_type_lower == "gemini":
-            protected = secure_storage.protect_secret(api_key or "")
-            return self.set_setting("api", "gemini_api_key", protected)
-        logger.warning("未対応のAPIが指定されました: %s", api_type)
-        return False
+        if (api_type or "").lower() != "gemini":
+            logger.warning("未対応のAPIが指定されました: %s", api_type)
+            return False
+        protected = secure_storage.protect_secret(api_key or "")
+        return self.set_setting("api", "gemini_api_key", protected)
+
     def get_target_language(self) -> str:
         """Return configured translation target language code."""
         return self.get_setting("language", "target_language")
@@ -217,63 +238,71 @@ class SettingsManager:
 
     def get_selected_api(self) -> str:
         """Return the selected API provider name."""
-        return self.get_setting("api", "selected_api")
+        return "gemini"
 
     def set_selected_api(self, api_type: str) -> bool:
         """Persist the selected API provider."""
-        api_type_lower = api_type.lower()
-        if api_type_lower in SUPPORTED_API_TYPES:
-            updated = self.set_setting("api", "selected_api", api_type_lower)
-            if updated:
-                models = self._ensure_model_map()
-                self.settings["api"]["model"] = models.get(
-                    api_type_lower, DEFAULT_MODELS_BY_API[api_type_lower]
-                )
-            return updated
-        logger.warning("無効なAPI種別が指定されました: %s", api_type)
-        return False
+        if (api_type or "").lower() != "gemini":
+            logger.warning("Google API専用のため、API種別 %s は利用できません。", api_type)
+        return self.set_setting("api", "selected_api", "gemini")
+
+    def get_llm_mode(self) -> str:
+        """Return the configured LLM mode."""
+        mode = self.get_setting("api", "llm_mode", DEFAULT_LLM_MODE)
+        return mode if mode in ("auto", "custom") else DEFAULT_LLM_MODE
+
+    def set_llm_mode(self, mode: str) -> bool:
+        """Persist LLM mode."""
+        normalized = (mode or DEFAULT_LLM_MODE).strip().lower()
+        if normalized not in ("auto", "custom"):
+            normalized = DEFAULT_LLM_MODE
+        updated = self.set_setting("api", "llm_mode", normalized)
+        if updated and normalized != "custom":
+            self.set_custom_model("")
+        self._sync_active_model()
+        return updated
+
+    def get_custom_model(self) -> str:
+        """Return the custom model name."""
+        value = self.get_setting("api", "custom_model", "")
+        return value.strip() if isinstance(value, str) else ""
+
+    def set_custom_model(self, model_name: str) -> bool:
+        """Persist custom model name."""
+        updated = self.set_setting("api", "custom_model", (model_name or "").strip())
+        self._sync_active_model()
+        return updated
 
     def get_model(self) -> str:
-        """Return selected model name."""
-        return self.get_model_for_api()
+        """Return the active model name."""
+        if self.get_llm_mode() == "custom":
+            custom_model = self.get_custom_model()
+            if custom_model:
+                return custom_model
+        return DEFAULT_PRIMARY_MODEL
 
     def set_model(self, model_name: str) -> bool:
-        """Persist model name."""
-        return self.set_model_for_api(self.get_selected_api(), model_name)
-
-    def get_model_for_api(self, api_type: str | None = None) -> str:
-        """Return the stored model for a specific API (defaults to the currently selected API)."""
-        self._ensure_latest_settings()
-        models = self._ensure_model_map()
-        selected_api = (api_type or self.get_selected_api() or "openai").lower()
-        if selected_api not in SUPPORTED_API_TYPES:
-            selected_api = "openai"
-        model_name = models.get(selected_api)
-        if isinstance(model_name, str) and model_name.strip():
-            return model_name.strip()
-        return DEFAULT_MODELS_BY_API[selected_api]
-
-    def get_default_model_for_api(self, api_type: str) -> str:
-        """Return the default model for the specified API."""
-        return DEFAULT_MODELS_BY_API.get(api_type.lower(), DEFAULT_MODELS_BY_API["openai"])
-
-    def set_model_for_api(self, api_type: str, model_name: str) -> bool:
-        """Persist the model name for a specific API."""
-        self._ensure_latest_settings()
-        api_type_lower = (api_type or "").lower()
-        if api_type_lower not in SUPPORTED_API_TYPES:
-            logger.warning("無効なAPI種別が指定されました: %s", api_type)
-            return False
-
-        models = self._ensure_model_map()
+        """Persist active model as custom when explicitly specified."""
         sanitized = (model_name or "").strip()
         if not sanitized:
-            sanitized = DEFAULT_MODELS_BY_API[api_type_lower]
-        models[api_type_lower] = sanitized
+            return self.set_llm_mode("auto")
+        self.set_custom_model(sanitized)
+        return self.set_llm_mode("custom")
 
-        if self.get_selected_api() == api_type_lower:
-            self.settings["api"]["model"] = sanitized
-        return True
+    def get_model_for_api(self, api_type: str | None = None) -> str:
+        """Compatibility wrapper for legacy callers."""
+        return self.get_model()
+
+    def get_default_model_for_api(self, api_type: str) -> str:
+        """Return the default Google model."""
+        return DEFAULT_PRIMARY_MODEL
+
+    def set_model_for_api(self, api_type: str, model_name: str) -> bool:
+        """Compatibility wrapper for legacy callers."""
+        if (api_type or "gemini").lower() != "gemini":
+            logger.warning("無効なAPI種別が指定されました: %s", api_type)
+            return False
+        return self.set_model(model_name)
 
     def get_timeout(self) -> int:
         """Return configured API timeout in seconds."""
@@ -283,29 +312,24 @@ class SettingsManager:
         """Persist API timeout value."""
         return self.set_setting("api", "timeout", timeout)
 
-    def get_openai_reasoning_effort(self) -> str:
-        """Return configured reasoning effort for OpenAI GPT-5 models."""
-        return self.get_setting("api", "reasoning_effort", "medium")
+    def get_primary_google_model(self) -> str:
+        """Return the built-in primary model for auto mode."""
+        return DEFAULT_PRIMARY_MODEL
 
-    def set_openai_reasoning_effort(self, effort: str) -> bool:
-        """Persist reasoning effort for OpenAI GPT-5 models."""
-        return self.set_setting("api", "reasoning_effort", effort)
+    def get_fallback_google_model(self) -> str:
+        """Return the built-in fallback model for auto mode."""
+        return DEFAULT_FALLBACK_MODEL
 
-    def get_openai_verbosity(self) -> str:
-        """Return configured verbosity for OpenAI GPT-5 models."""
-        return self.get_setting("api", "verbosity", "medium")
+    def get_model_candidates(self) -> list[str]:
+        """Return model names in the order they should be attempted."""
+        if self.get_llm_mode() == "custom":
+            custom_model = self.get_custom_model()
+            return [custom_model] if custom_model else [DEFAULT_PRIMARY_MODEL]
+        return [DEFAULT_PRIMARY_MODEL, DEFAULT_FALLBACK_MODEL]
 
-    def set_openai_verbosity(self, verbosity: str) -> bool:
-        """Persist verbosity for OpenAI GPT-5 models."""
-        return self.set_setting("api", "verbosity", verbosity)
-
-    def get_openai_max_output_tokens(self) -> int:
-        """Return configured max output tokens for OpenAI GPT-5 models."""
-        return self.get_setting("api", "max_output_tokens", 1024)
-
-    def set_openai_max_output_tokens(self, value: int) -> bool:
-        """Persist max output tokens for OpenAI GPT-5 models."""
-        return self.set_setting("api", "max_output_tokens", value)
+    def is_custom_model_enabled(self) -> bool:
+        """Return whether the custom model path is active."""
+        return self.get_llm_mode() == "custom" and bool(self.get_custom_model())
 
     def get_transcribe_original_text(self) -> bool:
         """Return transcription flag."""
@@ -314,5 +338,3 @@ class SettingsManager:
     def set_transcribe_original_text(self, value: bool) -> bool:
         """Persist transcription flag."""
         return self.set_setting("ui", "transcribe_original_text", value)
-
-
