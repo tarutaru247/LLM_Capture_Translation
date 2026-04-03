@@ -9,7 +9,7 @@ from PyQt5.QtCore import QBuffer, QIODevice
 from PyQt5.QtGui import QImage, QPixmap
 
 from ..utils.google_ai import (
-    build_minimal_thinking_generation_config,
+    build_generation_config_for_model,
     create_google_client,
     format_model_chain,
     get_google_model_candidates,
@@ -57,10 +57,11 @@ class CombinedVisionTranslator(TranslatorService):
 
         for index, model_name in enumerate(model_candidates):
             try:
+                config = build_generation_config_for_model(model_name)
                 response = client.models.generate_content(
                     model=model_name,
                     contents=[prompt_text, pil_image],
-                    config=build_minimal_thinking_generation_config(),
+                    config=config,
                 )
                 if index > 0:
                     logger.warning("Vision一括翻訳でモデルを %s にフォールバックしました。", model_name)

@@ -40,11 +40,19 @@ def format_model_chain(models: Iterable[str]) -> str:
     return " -> ".join(model for model in models if model)
 
 
-def build_minimal_thinking_generation_config() -> dict:
-    """Build GenerateContentConfig with minimal thinking for Gemini 3 Flash family."""
-    return types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(thinking_level="minimal")
-    )
+def supports_minimal_thinking(model_name: str | None) -> bool:
+    """Return True when the target model supports minimal thinking config."""
+    lowered = (model_name or "").strip().lower()
+    return lowered.startswith("gemini-3.1-flash-lite")
+
+
+def build_generation_config_for_model(model_name: str | None):
+    """Build per-model config. Thinking is only enabled on supported Gemini models."""
+    if supports_minimal_thinking(model_name):
+        return types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_level="minimal")
+        )
+    return None
 
 
 def create_google_client(api_key: str) -> genai.Client:
