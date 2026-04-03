@@ -111,26 +111,29 @@ class SettingsManager:
         api_settings["selected_api"] = "gemini"
 
         llm_mode = api_settings.get("llm_mode")
-        if llm_mode not in ("auto", "custom"):
+        llm_mode_is_legacy = llm_mode not in ("auto", "custom")
+        if llm_mode_is_legacy:
             api_settings["llm_mode"] = DEFAULT_LLM_MODE
 
         custom_model = api_settings.get("custom_model")
         if not isinstance(custom_model, str):
             custom_model = ""
+        custom_model = custom_model.strip()
+        api_settings["custom_model"] = custom_model
 
-        legacy_candidate = ""
-        models_by_api = api_settings.get("models_by_api")
-        if isinstance(models_by_api, dict):
-            value = models_by_api.get("gemini")
-            if isinstance(value, str):
-                legacy_candidate = value.strip()
+        if llm_mode_is_legacy and not custom_model:
+            legacy_candidate = ""
+            models_by_api = api_settings.get("models_by_api")
+            if isinstance(models_by_api, dict):
+                value = models_by_api.get("gemini")
+                if isinstance(value, str):
+                    legacy_candidate = value.strip()
 
-        if not legacy_candidate:
-            legacy_model = api_settings.get("model")
-            if isinstance(legacy_model, str):
-                legacy_candidate = legacy_model.strip()
+            if not legacy_candidate:
+                legacy_model = api_settings.get("model")
+                if isinstance(legacy_model, str):
+                    legacy_candidate = legacy_model.strip()
 
-        if not custom_model and legacy_candidate:
             lowered = legacy_candidate.lower()
             if lowered.startswith("gemini") or lowered.startswith("gemma"):
                 if legacy_candidate not in (DEFAULT_PRIMARY_MODEL, DEFAULT_FALLBACK_MODEL):
@@ -141,6 +144,8 @@ class SettingsManager:
             api_settings["custom_model"] = ""
 
         api_settings["fallback_model"] = DEFAULT_FALLBACK_MODEL
+        api_settings["models_by_api"] = {"gemini": DEFAULT_PRIMARY_MODEL}
+        api_settings.pop("openai_api_key", None)
 
         language_settings = settings.setdefault("language", {})
         legacy_target = language_settings.get("target_language")
@@ -152,6 +157,12 @@ class SettingsManager:
                 language_settings["app_language"] = get_system_default_language()
         else:
             language_settings["app_language"] = normalize_app_language(app_language)
+
+        vision_ocr_settings = settings.setdefault("vision_ocr", {})
+        vision_ocr_settings["provider"] = "gemini"
+        vision_ocr_settings["model"] = DEFAULT_PRIMARY_MODEL
+        vision_ocr_settings["timeout"] = api_settings.get("timeout", 60)
+        vision_ocr_settings.pop("openai_api_key", None)
 
     def _sync_active_model(self, settings: Optional[Dict[str, Any]] = None) -> None:
         """Mirror the currently active model into the legacy `model` field."""
@@ -188,6 +199,7 @@ class SettingsManager:
     def save_settings(self) -> bool:
         """Persist current settings to disk."""
         try:
+            self._migrate_legacy_settings()
             self._sync_active_model()
             with open(self.config_file, "w", encoding="utf-8") as fh:
                 json.dump(self.settings, fh, indent=4, ensure_ascii=False)
