@@ -64,6 +64,7 @@ def create_executable():
         f"--workpath={build_dir}",
         "--windowed",  # GUIアプリケーション
         "--onefile",   # 単一の実行ファイル
+        "--add-data=src/prompts/vision_translation_prompt.md;src/prompts",
         "--icon=resources/icon.ico",  # アイコン（存在する場合）
         "main.py"
     ]

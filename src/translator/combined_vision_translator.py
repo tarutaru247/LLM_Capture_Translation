@@ -1,5 +1,6 @@
 import base64
 import logging
+import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -20,7 +21,13 @@ from ..utils.utils import handle_exception, sanitize_sensitive_data
 from .translator_service import TranslatorService
 
 logger = logging.getLogger("ocr_translator")
-PROMPT_TEMPLATE_PATH = Path(__file__).resolve().parent.parent / "prompts" / "vision_translation_prompt.md"
+
+
+def _get_prompt_template_path() -> Path:
+    """Return the prompt template path for both source runs and PyInstaller builds."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / "src" / "prompts" / "vision_translation_prompt.md"
+    return Path(__file__).resolve().parent.parent / "prompts" / "vision_translation_prompt.md"
 
 
 class CombinedVisionTranslator(TranslatorService):
@@ -80,7 +87,7 @@ class CombinedVisionTranslator(TranslatorService):
     def _build_prompt_text(self, target_language_name: str) -> str:
         """Markdown テンプレートから一括翻訳プロンプトを読み込む。"""
         try:
-            template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+            template = _get_prompt_template_path().read_text(encoding="utf-8")
         except OSError as exc:
             logger.error("一括翻訳プロンプトの読み込みに失敗しました: %s", sanitize_sensitive_data(str(exc)))
             raise RuntimeError("一括翻訳プロンプトを読み込めませんでした。") from exc
