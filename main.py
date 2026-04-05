@@ -1,9 +1,9 @@
 import sys
 import logging
-import multiprocessing
 from PyQt5.QtWidgets import QApplication
 
 from src.ui.main_window import MainWindow
+from src.translator.translation_job_runner import main as translation_job_runner_main
 from src.utils.utils import setup_logger
 
 logger = setup_logger()
@@ -28,5 +28,6 @@ def main():
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()
+    if "--translation-worker" in sys.argv:
+        raise SystemExit(translation_job_runner_main())
     main()

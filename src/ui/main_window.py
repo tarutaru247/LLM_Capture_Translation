@@ -2,10 +2,13 @@
 メインウィンドウモジュール
 """
 import ctypes
+import json
 import logging
-import multiprocessing
-import queue
+import subprocess
 import threading
+import sys
+import base64
+from pathlib import Path
 from ctypes import wintypes
 
 from PyQt5.QtCore import QBuffer, QIODevice, QObject, QRect, QSize, Qt, pyqtSignal
@@ -27,9 +30,6 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from ..ocr.vision_ocr_service import VisionOCRService
-from ..translator.translation_job import run_translation_job_process
-from ..translator.translation_manager import TranslationManager
 from ..ui.screen_capture import ScreenCaptureWindow
 from ..ui.settings_dialog import SettingsDialog
 from ..utils.localization import get_ui_string
@@ -122,15 +122,11 @@ class MainWindow(QMainWindow):
         self.hotkey_id = 1
         self.settings_manager = SettingsManager()
         self.capture_window = None
-        self.ocr_service = VisionOCRService()
-        self.translation_manager = TranslationManager()
         self.captured_pixmap = None
         self.extracted_text = ""
         self.translated_text = ""
         self.overlay = None
         self._last_capture_global_rect: QRect | None = None
-        self.worker_process: multiprocessing.Process | None = None
-        self.worker_queue = None
         self.worker_thread: threading.Thread | None = None
         self.result_bridge = TranslationResultBridge()
         self.result_bridge.result_ready.connect(self._handle_translation_result)
@@ -357,48 +353,65 @@ class MainWindow(QMainWindow):
     def _start_translation_worker(self, pixmap: QPixmap, target_lang: str, transcribe_original: bool):
         image_bytes = self._pixmap_to_png_bytes(pixmap)
         self._set_processing_state(True)
-        logger.info("バックグラウンド翻訳プロセスを開始します。")
+        logger.info("バックグラウンド翻訳サブプロセスを開始します。")
 
-        ctx = multiprocessing.get_context("spawn")
-        self.worker_queue = ctx.Queue()
-        self.worker_process = ctx.Process(
-            target=run_translation_job_process,
-            args=(image_bytes, target_lang, transcribe_original, self.worker_queue),
+        self.worker_thread = threading.Thread(
+            target=self._run_translation_subprocess,
+            args=(image_bytes, target_lang, transcribe_original),
+            name="translation-worker",
             daemon=True,
         )
-        self.worker_process.start()
-
-        self.worker_thread = threading.Thread(target=self._wait_for_worker_result, name="translation-worker", daemon=True)
         self.worker_thread.start()
 
-    def _wait_for_worker_result(self):
-        result = None
-        while True:
-            try:
-                result = self.worker_queue.get(timeout=0.5)
-                break
-            except queue.Empty:
-                if self.worker_process is not None and not self.worker_process.is_alive():
-                    break
+    def _build_translation_subprocess_command(self) -> list[str]:
+        if getattr(sys, "frozen", False):
+            return [sys.executable, "--translation-worker"]
+        return [sys.executable, "-m", "src.translator.translation_job_runner"]
 
-        if result is None:
-            exit_code = self.worker_process.exitcode if self.worker_process is not None else None
+    def _run_translation_subprocess(self, image_bytes: bytes, target_lang: str, transcribe_original: bool):
+        payload = {
+            "image_bytes_b64": base64.b64encode(image_bytes).decode("ascii"),
+            "target_lang": target_lang,
+            "transcribe_original": transcribe_original,
+        }
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+        try:
+            completed = subprocess.run(
+                self._build_translation_subprocess_command(),
+                input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                capture_output=True,
+                cwd=str(self._get_project_root()),
+                creationflags=creationflags,
+                timeout=self.settings_manager.get_timeout() + 30,
+            )
+            stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace")
+            stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace")
+            if completed.returncode == 0:
+                result = json.loads(stdout_text or "{}")
+            else:
+                stderr = (stderr_text or stdout_text).strip()
+                result = {
+                    "translated_text": None,
+                    "extracted_text": "",
+                    "error_message": f"翻訳サブプロセスが異常終了しました。(code={completed.returncode}) {stderr[-400:]}".strip(),
+                    "last_used_model": None,
+                }
+        except Exception as exc:
             result = {
                 "translated_text": None,
                 "extracted_text": "",
-                "error_message": f"翻訳プロセスが異常終了しました。(exitcode={exit_code})",
+                "error_message": f"翻訳サブプロセスの起動に失敗しました: {exc}",
                 "last_used_model": None,
             }
 
         self.result_bridge.result_ready.emit(result)
 
+    def _get_project_root(self):
+        return Path(__file__).resolve().parents[2]
+
     def _clear_worker_references(self):
-        logger.info("バックグラウンド翻訳プロセスを終了しました。")
-        if self.worker_queue is not None:
-            self.worker_queue.close()
-            self.worker_queue = None
-        if self.worker_process is not None:
-            self.worker_process = None
+        logger.info("バックグラウンド翻訳サブプロセス処理を終了しました。")
         self.worker_thread = None
 
     def _set_processing_state(self, is_processing: bool):
