@@ -16,8 +16,9 @@ def main() -> int:
     target_lang = payload.get("target_lang")
     transcribe_original = bool(payload.get("transcribe_original"))
     result = run_translation_job(image_bytes, target_lang, transcribe_original)
-    json.dump(result, sys.stdout, ensure_ascii=False)
-    sys.stdout.flush()
+    output = json.dumps(result, ensure_ascii=False).encode("utf-8")
+    sys.stdout.buffer.write(output)
+    sys.stdout.buffer.flush()
     return 0
 
 
