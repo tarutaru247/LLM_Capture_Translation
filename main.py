@@ -16,6 +16,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("OCR翻訳ツール")
     app.setOrganizationName("OCR Translator")
+    app.setQuitOnLastWindowClosed(False)
 
     # メインウィンドウの作成と表示
     # ホットキー処理はMainWindowに集約

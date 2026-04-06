@@ -334,6 +334,9 @@ class MainWindow(QMainWindow):
             self._last_capture_global_rect = None
 
         self.captured_pixmap = pixmap
+        self.show()
+        self.raise_()
+        self.activateWindow()
         self.status_bar.showMessage(self.tr_ui("status_processing"))
 
         target_lang = self.settings_manager.get_app_language()
