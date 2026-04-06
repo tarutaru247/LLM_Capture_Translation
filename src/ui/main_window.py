@@ -62,8 +62,8 @@ class ProcessingOverlay(QWidget):
         panel.setStyleSheet(
             """
             QFrame#processingPanel {
-                background-color: rgba(17, 25, 40, 245);
-                border: 1px solid #4f8cff;
+                background-color: transparent;
+                border: none;
                 border-radius: 18px;
             }
             QLabel {
