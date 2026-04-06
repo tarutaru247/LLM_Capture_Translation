@@ -62,12 +62,13 @@ class ProcessingOverlay(QWidget):
         panel.setStyleSheet(
             """
             QFrame#processingPanel {
-                background-color: transparent;
-                border: none;
+                background-color: rgba(17, 25, 40, 245);
+                border: 1px solid #4f8cff;
                 border-radius: 18px;
             }
             QLabel {
                 color: #f8fbff;
+                background-color: transparent;
             }
             QProgressBar {
                 border: 1px solid #4f8cff;
@@ -88,13 +89,13 @@ class ProcessingOverlay(QWidget):
 
         self.title_label = QLabel()
         self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #ffffff;")
+        self.title_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #ffffff; background-color: transparent;")
         layout.addWidget(self.title_label)
 
         self.detail_label = QLabel()
         self.detail_label.setAlignment(Qt.AlignCenter)
         self.detail_label.setWordWrap(True)
-        self.detail_label.setStyleSheet("font-size: 14px; color: #d7e7ff;")
+        self.detail_label.setStyleSheet("font-size: 14px; color: #d7e7ff; background-color: transparent;")
         layout.addWidget(self.detail_label)
 
         self.progress_bar = QProgressBar()
