@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 
 _SENSITIVE_PATTERNS = [
-    # OpenAI API keys (sk-*, sk-live-*, sk-proj-*, gsk_...)
+    # Legacy keys that may still appear in old logs/settings
     re.compile(r"(sk-[A-Za-z0-9\-]{16,})"),
     re.compile(r"(gsk_[A-Za-z0-9\-]{16,})"),
     re.compile(r"(pk-[A-Za-z0-9\-]{16,})"),
@@ -30,7 +30,7 @@ def setup_logger() -> logging.Logger:
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
+            logging.FileHandler(log_file, encoding='utf-8'),
             logging.StreamHandler()
         ]
     )

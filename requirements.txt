@@ -1,6 +1,5 @@
 PyQt5
 Pillow
-openai
-google-generativeai
+google-genai
 pyinstaller
 pynput

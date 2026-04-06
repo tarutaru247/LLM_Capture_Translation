@@ -2,41 +2,53 @@
 設定ダイアログモジュール
 """
 import logging
-from PyQt5.QtWidgets import (QDialog, QTabWidget, QVBoxLayout, QHBoxLayout, 
-                           QLabel, QLineEdit, QRadioButton, QCheckBox, 
-                           QPushButton, QGroupBox, QComboBox, QMessageBox, QWidget)
+
 from PyQt5.QtGui import QIntValidator
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
+from ..translator.translation_manager import TranslationManager
+from ..utils.localization import SUPPORTED_APP_LANGUAGES, get_language_name, get_ui_string
 from ..utils.settings_manager import SettingsManager
-from ..translator.translation_manager import TranslationManager # 追加
 
-logger = logging.getLogger('ocr_translator')
+logger = logging.getLogger("ocr_translator")
+
 
 class SettingsDialog(QDialog):
     """アプリケーション設定ダイアログ"""
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
-        
+
         self.settings_manager = SettingsManager()
-        self.translation_manager = TranslationManager() # 追加
-        self._api_model_cache = {}
-        self._current_api: str | None = None
-        self._suspend_api_toggle = False
-        
+        self.translation_manager = TranslationManager()
+        self.app_language = self.settings_manager.get_app_language()
+
         self._init_ui()
         self._load_settings()
-        
+
         logger.info("設定ダイアログを初期化しました")
-    
+
+    def tr_ui(self, key: str, **kwargs) -> str:
+        return get_ui_string(self.app_language, key, **kwargs)
+
     def _init_ui(self):
         """UIの初期化"""
-        self.setWindowTitle("設定")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(520)
 
-        # スタイルシートの適用
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             QDialog {
                 background-color: #f0f0f0;
             }
@@ -56,41 +68,13 @@ class SettingsDialog(QDialog):
             QPushButton:hover {
                 background-color: #45a049;
             }
-            QLineEdit {
+            QLineEdit, QComboBox {
                 font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
                 font-size: 14px;
                 border: 1px solid #cccccc;
                 border-radius: 3px;
                 padding: 5px;
                 background-color: white;
-            }
-            QComboBox {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                padding: 5px;
-                background-color: white;
-            }
-            QTabWidget::pane {
-                border: 1px solid #cccccc;
-                background-color: white;
-            }
-            QTabBar::tab {
-                background: #e0e0e0;
-                border: 1px solid #cccccc;
-                border-bottom-color: #e0e0e0;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                min-width: 90px;
-                min-height: 32px;
-                padding: 10px 16px;
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-            }
-            QTabBar::tab:selected {
-                background: white;
-                border-bottom-color: white;
             }
             QGroupBox {
                 font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
@@ -107,395 +91,201 @@ class SettingsDialog(QDialog):
                 padding: 0 3px;
                 background-color: #f0f0f0;
             }
-            QRadioButton {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-            }
-            QCheckBox {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-            }
-        """)
-        
-        # メインレイアウト
+            """
+        )
+
         main_layout = QVBoxLayout(self)
-        
-        # タブウィジェット
-        self.tab_widget = QTabWidget()
-        main_layout.addWidget(self.tab_widget)
-        
-        # API設定タブ
-        self._create_api_settings_tab()
-        
-        # 言語設定タブ
-        self._create_language_settings_tab()
-        
-        # 一般設定タブ
-        self._create_general_settings_tab()
-        
-        # ボタンレイアウト
+
+        self.language_group = QGroupBox()
+        language_form = QFormLayout(self.language_group)
+        language_form.setContentsMargins(10, 20, 10, 10)
+        language_form.setSpacing(12)
+
+        self.app_language_label = QLabel()
+        self.app_language_combo = QComboBox()
+        for language_code in SUPPORTED_APP_LANGUAGES:
+            self.app_language_combo.addItem(get_language_name(language_code), language_code)
+        self.app_language_combo.currentIndexChanged.connect(self._on_app_language_changed)
+        language_form.addRow(self.app_language_label, self.app_language_combo)
+        main_layout.addWidget(self.language_group)
+
+        api_container = QWidget()
+        api_layout = QVBoxLayout(api_container)
+
+        self.api_group = QGroupBox()
+        api_form = QFormLayout(self.api_group)
+        api_form.setContentsMargins(10, 20, 10, 10)
+        api_form.setSpacing(12)
+
+        self.gemini_api_key_label = QLabel()
+        self.gemini_api_key_edit = QLineEdit()
+        self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
+        api_form.addRow(self.gemini_api_key_label, self.gemini_api_key_edit)
+
+        self.llm_mode_label = QLabel()
+        self.llm_mode_combo = QComboBox()
+        self.llm_mode_combo.currentIndexChanged.connect(self._update_custom_model_visibility)
+        api_form.addRow(self.llm_mode_label, self.llm_mode_combo)
+
+        self.auto_model_note = QLabel()
+        self.auto_model_note.setWordWrap(True)
+        self.auto_model_note.setStyleSheet("font-size: 12px; color: #666666;")
+        api_form.addRow("", self.auto_model_note)
+
+        self.custom_model_label = QLabel()
+        self.custom_model_edit = QLineEdit()
+        api_form.addRow(self.custom_model_label, self.custom_model_edit)
+
+        self.custom_model_note = QLabel()
+        self.custom_model_note.setWordWrap(True)
+        self.custom_model_note.setStyleSheet("font-size: 12px; color: #666666;")
+        api_form.addRow("", self.custom_model_note)
+
+        self.timeout_label = QLabel()
+        self.timeout_edit = QLineEdit()
+        self.timeout_edit.setValidator(QIntValidator(1, 300))
+        api_form.addRow(self.timeout_label, self.timeout_edit)
+
+        api_layout.addWidget(self.api_group)
+
+        verify_layout = QHBoxLayout()
+        verify_layout.addStretch()
+        self.verify_button = QPushButton()
+        self.verify_button.clicked.connect(self._verify_api_keys)
+        verify_layout.addWidget(self.verify_button)
+        api_layout.addLayout(verify_layout)
+        api_layout.addStretch()
+
+        main_layout.addWidget(api_container)
+
         button_layout = QHBoxLayout()
         button_layout.addStretch()
-        
-        self.cancel_button = QPushButton("キャンセル")
+
+        self.cancel_button = QPushButton()
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
-        
-        self.save_button = QPushButton("保存")
+
+        self.save_button = QPushButton()
         self.save_button.clicked.connect(self._save_settings)
         self.save_button.setDefault(True)
         button_layout.addWidget(self.save_button)
-        
+
         main_layout.addLayout(button_layout)
-    
-    def _create_api_settings_tab(self):
-        """API設定タブの作成"""
-        api_tab = QWidget()
-        api_layout = QVBoxLayout(api_tab)
-        
-        # OpenAI API設定
-        openai_group = QGroupBox("OpenAI API設定")
-        openai_layout = QVBoxLayout(openai_group)
-        openai_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
-        openai_layout.setSpacing(10) # ウィジェット間のスペースを調整
-        
-        openai_key_layout = QHBoxLayout()
-        openai_key_layout.addWidget(QLabel("APIキー:"))
-        
-        self.openai_api_key_edit = QLineEdit()
-        self.openai_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.openai_api_key_edit.setPlaceholderText("OpenAI APIキーを入力")
-        openai_key_layout.addWidget(self.openai_api_key_edit)
-        
-        openai_layout.addLayout(openai_key_layout)
-        api_layout.addWidget(openai_group)
-        
-        # Gemini API設定
-        gemini_group = QGroupBox("Google Gemini API設定")
-        gemini_layout = QVBoxLayout(gemini_group)
-        gemini_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
-        gemini_layout.setSpacing(10) # ウィジェット間のスペースを調整
-        
-        gemini_key_layout = QHBoxLayout()
-        gemini_key_layout.addWidget(QLabel("APIキー:"))
-        
-        self.gemini_api_key_edit = QLineEdit()
-        self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
-        self.gemini_api_key_edit.setPlaceholderText("Gemini APIキーを入力")
-        gemini_key_layout.addWidget(self.gemini_api_key_edit)
-        
-        gemini_layout.addLayout(gemini_key_layout)
-        api_layout.addWidget(gemini_group)
-        
-        # API選択
-        api_selection_group = QGroupBox("使用するAPI")
-        api_selection_layout = QVBoxLayout(api_selection_group)
-        api_selection_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
-        api_selection_layout.setSpacing(10) # ウィジェット間のスペースを調整
-        
-        self.openai_radio = QRadioButton("OpenAI API")
-        api_selection_layout.addWidget(self.openai_radio)
+        self._apply_texts()
 
-        self.gemini_radio = QRadioButton("Google Gemini API")
-        api_selection_layout.addWidget(self.gemini_radio)
+    def _apply_texts(self):
+        """現在のアプリ言語に合わせて文言を反映"""
+        self.setWindowTitle(self.tr_ui("settings_dialog_title"))
+        self.app_language_label.setText(self.tr_ui("app_language"))
 
-        self.openai_radio.toggled.connect(lambda checked: self._handle_api_radio_change("openai", checked))
-        self.gemini_radio.toggled.connect(lambda checked: self._handle_api_radio_change("gemini", checked))
-        
-        api_layout.addWidget(api_selection_group)
-        
-        # APIキー検証ボタン
-        verify_layout = QHBoxLayout()
-        verify_layout.addStretch()
-        
-        self.verify_button = QPushButton("APIキーを検証")
-        self.verify_button.clicked.connect(self._verify_api_keys)
-        verify_layout.addWidget(self.verify_button)
-        
-        api_layout.addLayout(verify_layout)
-        
-        # 共通モデル設定
-        model_settings_group = QGroupBox("モデル設定")
-        model_settings_layout = QVBoxLayout(model_settings_group)
-        model_settings_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
-        model_settings_layout.setSpacing(10) # ウィジェット間のスペースを調整
+        self.language_group.setTitle(self.tr_ui("settings_language_group"))
+        self.api_group.setTitle(self.tr_ui("settings_api_group"))
 
-        model_label = QLabel("モデル名:")
-        self.model_edit = QLineEdit()
-        self.model_edit.setPlaceholderText("例: gemini-2.5-flash-latest, gpt-5-nano")
-        model_settings_layout.addWidget(model_label)
-        model_settings_layout.addWidget(self.model_edit)
+        self.gemini_api_key_label.setText(self.tr_ui("google_api_key"))
+        self.gemini_api_key_edit.setPlaceholderText(self.tr_ui("google_api_key_placeholder"))
 
-        recommend_label = QLabel("デフォルト: OpenAI→gpt-5-nano / Gemini→gemini-flash-lite-latest")
-        recommend_label.setStyleSheet("font-size: 12px; color: #666666;")
-        model_settings_layout.addWidget(recommend_label)
+        self.llm_mode_label.setText(self.tr_ui("llm_setting"))
+        current_mode = self.llm_mode_combo.currentData()
+        self.llm_mode_combo.blockSignals(True)
+        self.llm_mode_combo.clear()
+        self.llm_mode_combo.addItem(self.tr_ui("llm_auto"), "auto")
+        self.llm_mode_combo.addItem(self.tr_ui("llm_custom"), "custom")
+        mode_index = self.llm_mode_combo.findData(current_mode if current_mode else "auto")
+        self.llm_mode_combo.setCurrentIndex(mode_index if mode_index >= 0 else 0)
+        self.llm_mode_combo.blockSignals(False)
 
-        timeout_label = QLabel("APIタイムアウト (秒):")
-        self.timeout_edit = QLineEdit()
-        self.timeout_edit.setPlaceholderText("例: 60")
-        self.timeout_edit.setValidator(QIntValidator(1, 300)) # 1秒〜300秒
-        model_settings_layout.addWidget(timeout_label)
-        model_settings_layout.addWidget(self.timeout_edit)
+        self.auto_model_note.setText(self.tr_ui("auto_model_note"))
+        self.custom_model_label.setText(self.tr_ui("model_name"))
+        self.custom_model_edit.setPlaceholderText(self.tr_ui("custom_model_placeholder"))
+        self.custom_model_note.setText(self.tr_ui("custom_model_note"))
+        self.timeout_label.setText(self.tr_ui("timeout"))
+        self.timeout_edit.setPlaceholderText("60")
+        self.verify_button.setText(self.tr_ui("verify_api_key"))
+        self.cancel_button.setText(self.tr_ui("cancel"))
+        self.save_button.setText(self.tr_ui("save"))
 
-        api_layout.addWidget(model_settings_group)
-
-        self.openai_detail_group = QGroupBox("OpenAI GPT-5 詳細設定")
-        openai_detail_layout = QVBoxLayout(self.openai_detail_group)
-        openai_detail_layout.setContentsMargins(10, 20, 10, 10)
-        openai_detail_layout.setSpacing(10)
-
-        reasoning_label = QLabel("GPT-5 推論モード:")
-        self.reasoning_combo = QComboBox()
-        self.reasoning_combo.addItem("最小", "minimal")
-        self.reasoning_combo.addItem("低", "low")
-        self.reasoning_combo.addItem("中 (推奨)", "medium")
-        self.reasoning_combo.addItem("高", "high")
-        openai_detail_layout.addWidget(reasoning_label)
-        openai_detail_layout.addWidget(self.reasoning_combo)
-
-        verbosity_label = QLabel("GPT-5 出力の詳細度:")
-        self.verbosity_combo = QComboBox()
-        self.verbosity_combo.addItem("低", "low")
-        self.verbosity_combo.addItem("中 (推奨)", "medium")
-        self.verbosity_combo.addItem("高", "high")
-        openai_detail_layout.addWidget(verbosity_label)
-        openai_detail_layout.addWidget(self.verbosity_combo)
-
-        max_tokens_label = QLabel("GPT-5 最大出力トークン:")
-        self.max_output_tokens_edit = QLineEdit()
-        self.max_output_tokens_edit.setPlaceholderText("例: 1024")
-        self.max_output_tokens_edit.setValidator(QIntValidator(1, 32768))
-        openai_detail_layout.addWidget(max_tokens_label)
-        openai_detail_layout.addWidget(self.max_output_tokens_edit)
-
-        api_layout.addWidget(self.openai_detail_group)
-        api_layout.addStretch()
-
-        
-        self.tab_widget.addTab(api_tab, "API設定")
-    
-    def _create_language_settings_tab(self):
-        """言語設定タブの作成"""
-        language_tab = QWidget()
-        language_layout = QVBoxLayout(language_tab)
-        
-        # 翻訳先言語設定
-        target_lang_group = QGroupBox("翻訳先言語")
-        target_lang_layout = QVBoxLayout(target_lang_group)
-        target_lang_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
-        target_lang_layout.setSpacing(10) # ウィジェット間のスペースを調整
-        
-        self.target_language_combo = QComboBox()
-        self.target_language_combo.addItem("日本語", "ja")
-        self.target_language_combo.addItem("英語", "en")
-        self.target_language_combo.addItem("中国語", "zh")
-        self.target_language_combo.addItem("韓国語", "ko")
-        self.target_language_combo.addItem("フランス語", "fr")
-        self.target_language_combo.addItem("ドイツ語", "de")
-        target_lang_layout.addWidget(self.target_language_combo)
-        
-        language_layout.addWidget(target_lang_group)
-        language_layout.addStretch()
-        
-        self.tab_widget.addTab(language_tab, "言語設定")
-    
-    def _create_general_settings_tab(self):
-        """一般設定タブの作成"""
-        general_tab = QWidget()
-        general_layout = QVBoxLayout(general_tab)
-        
-        # 起動設定
-        startup_group = QGroupBox("起動設定")
-        startup_layout = QVBoxLayout(startup_group)
-        startup_layout.setContentsMargins(10, 20, 10, 10) # 余白を調整
-        startup_layout.setSpacing(10) # ウィジェット間のスペースを調整
-        
-        self.start_minimized_checkbox = QCheckBox("最小化状態で起動")
-        startup_layout.addWidget(self.start_minimized_checkbox)
-        
-        general_layout.addWidget(startup_group)
-
-        # OCR/翻訳設定
-        ocr_translation_group = QGroupBox("OCR/翻訳設定")
-        ocr_translation_layout = QVBoxLayout(ocr_translation_group)
-        ocr_translation_layout.setContentsMargins(10, 20, 10, 10)
-        ocr_translation_layout.setSpacing(10)
-
-        self.transcribe_original_text_checkbox = QCheckBox("原文を文字起こしする (一括翻訳を無効化)")
-        ocr_translation_layout.addWidget(self.transcribe_original_text_checkbox)
-        
-        general_layout.addWidget(ocr_translation_group) # 追加
-        general_layout.addStretch()
-        
-        self.tab_widget.addTab(general_tab, "一般設定")
-    
     def _load_settings(self):
         """設定を読み込んでUIに反映"""
-        # API設定
-        openai_api_key = self.settings_manager.get_api_key('openai')
-        gemini_api_key = self.settings_manager.get_api_key('gemini')
-        selected_api = self.settings_manager.get_selected_api()
+        gemini_api_key = self.settings_manager.get_api_key("gemini")
+        llm_mode = self.settings_manager.get_llm_mode()
+        custom_model = self.settings_manager.get_custom_model()
         timeout = self.settings_manager.get_timeout()
-        reasoning_effort = self.settings_manager.get_openai_reasoning_effort()
-        verbosity = self.settings_manager.get_openai_verbosity()
-        max_output_tokens = self.settings_manager.get_openai_max_output_tokens()
+        app_language = self.settings_manager.get_app_language()
 
-        self.openai_api_key_edit.setText(openai_api_key if openai_api_key else "")
         self.gemini_api_key_edit.setText(gemini_api_key if gemini_api_key else "")
-
-        self._api_model_cache = {}
-        for api_type in ("openai", "gemini"):
-            value = self.settings_manager.get_model_for_api(api_type)
-            if not value:
-                value = self.settings_manager.get_default_model_for_api(api_type)
-            self._api_model_cache[api_type] = value
-
-        self._current_api = selected_api if selected_api in self._api_model_cache else "openai"
-        self._suspend_api_toggle = True
-        if self._current_api == 'gemini':
-            self.gemini_radio.setChecked(True)
-        else:
-            self.openai_radio.setChecked(True)
-        self._suspend_api_toggle = False
-
-        self._apply_model_text_from_cache()
-        self._update_openai_controls_visibility()
-
+        self.custom_model_edit.setText(custom_model)
         self.timeout_edit.setText(str(timeout) if timeout else "")
 
-        reasoning_index = self.reasoning_combo.findData(reasoning_effort)
-        if reasoning_index >= 0:
-            self.reasoning_combo.setCurrentIndex(reasoning_index)
+        lang_index = self.app_language_combo.findData(app_language)
+        self.app_language_combo.setCurrentIndex(lang_index if lang_index >= 0 else 0)
 
-        verbosity_index = self.verbosity_combo.findData(verbosity)
-        if verbosity_index >= 0:
-            self.verbosity_combo.setCurrentIndex(verbosity_index)
+        mode_index = self.llm_mode_combo.findData(llm_mode)
+        self.llm_mode_combo.setCurrentIndex(mode_index if mode_index >= 0 else 0)
+        self._update_custom_model_visibility()
 
-        self.max_output_tokens_edit.setText(str(max_output_tokens) if max_output_tokens else "")
-        
-        # 言語設定
-        target_language = self.settings_manager.get_target_language()
-        
-        # 翻訳先言語の設定
-        index = self.target_language_combo.findData(target_language)
-        if index >= 0:
-            self.target_language_combo.setCurrentIndex(index)
-        
-        # 一般設定
-        start_minimized = self.settings_manager.get_setting('ui', 'start_minimized', False)
-        self.start_minimized_checkbox.setChecked(start_minimized)
+    def _on_app_language_changed(self):
+        """言語選択変更時に文言を即時更新"""
+        self.app_language = self.app_language_combo.currentData() or self.settings_manager.get_app_language()
+        self._apply_texts()
+        self._update_custom_model_visibility()
 
-        transcribe_original_text = self.settings_manager.get_transcribe_original_text() # 追加
-        self.transcribe_original_text_checkbox.setChecked(transcribe_original_text) # 追加
-    
+    def _update_custom_model_visibility(self):
+        """カスタムモデル入力欄の表示を切り替える"""
+        is_custom = self.llm_mode_combo.currentData() == "custom"
+        self.custom_model_label.setVisible(is_custom)
+        self.custom_model_edit.setVisible(is_custom)
+        self.custom_model_note.setVisible(is_custom)
+        self.auto_model_note.setVisible(not is_custom)
+
     def _save_settings(self):
         """UIの設定を保存"""
         try:
-            # API設定
-            openai_api_key = self.openai_api_key_edit.text()
             gemini_api_key = self.gemini_api_key_edit.text()
-            selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'
-            self._current_api = selected_api
-            self._store_current_model_text()
+            llm_mode = self.llm_mode_combo.currentData()
+            custom_model = self.custom_model_edit.text().strip()
             timeout = int(self.timeout_edit.text()) if self.timeout_edit.text().isdigit() else 60
-            reasoning_effort = self.reasoning_combo.currentData()
-            verbosity = self.verbosity_combo.currentData()
-            max_output_tokens_text = self.max_output_tokens_edit.text()
-            max_output_tokens = int(max_output_tokens_text) if max_output_tokens_text.isdigit() else 1024
+            app_language = self.app_language_combo.currentData()
 
-            self.settings_manager.set_api_key('openai', openai_api_key)
-            self.settings_manager.set_api_key('gemini', gemini_api_key)
-            for api_type, model_value in self._api_model_cache.items():
-                self.settings_manager.set_model_for_api(api_type, model_value)
-            self.settings_manager.set_selected_api(selected_api)
+            if llm_mode == "custom" and not custom_model:
+                QMessageBox.warning(self, self.tr_ui("validation_title"), self.tr_ui("validation_custom_model"))
+                return
+
+            self.settings_manager.set_api_key("gemini", gemini_api_key)
+            self.settings_manager.set_llm_mode(llm_mode)
+            self.settings_manager.set_custom_model(custom_model if llm_mode == "custom" else "")
             self.settings_manager.set_timeout(timeout)
-            self.settings_manager.set_openai_reasoning_effort(reasoning_effort)
-            self.settings_manager.set_openai_verbosity(verbosity)
-            self.settings_manager.set_openai_max_output_tokens(max_output_tokens)
-            
-            # 言語設定
-            target_language = self.target_language_combo.currentData()
-            self.settings_manager.set_target_language(target_language)
-            
-            # 一般設定
-            start_minimized = self.start_minimized_checkbox.isChecked()
-            self.settings_manager.set_setting('ui', 'start_minimized', start_minimized)
+            self.settings_manager.set_app_language(app_language)
+            self.settings_manager.set_selected_api("gemini")
 
-            transcribe_original_text = self.transcribe_original_text_checkbox.isChecked() # 追加
-            self.settings_manager.set_transcribe_original_text(transcribe_original_text) # 追加
-            
-            # 設定を保存
             if self.settings_manager.save_settings():
                 logger.info("設定を保存しました")
                 self.accept()
             else:
-                QMessageBox.critical(self, "エラー", "設定の保存に失敗しました")
+                QMessageBox.critical(self, self.tr_ui("error_title"), self.tr_ui("error_title"))
         except Exception as e:
-            logger.error(f"設定の保存中にエラーが発生しました: {str(e)}")
-            QMessageBox.critical(self, "エラー", f"設定の保存中にエラーが発生しました: {str(e)}")
-    
-    def _handle_api_radio_change(self, api_type: str, checked: bool) -> None:
-        """APIラジオボタン切替時の処理"""
-        if not checked:
-            return
-
-        if self._suspend_api_toggle:
-            self._current_api = api_type
-            self._apply_model_text_from_cache()
-            self._update_openai_controls_visibility()
-            return
-
-        if self._current_api == api_type:
-            self._update_openai_controls_visibility()
-            return
-
-        self._store_current_model_text()
-        self._current_api = api_type
-        if api_type not in self._api_model_cache:
-            self._api_model_cache[api_type] = self.settings_manager.get_default_model_for_api(api_type)
-        self._apply_model_text_from_cache()
-        self._update_openai_controls_visibility()
-
-    def _store_current_model_text(self) -> None:
-        """現在のテキストボックス内容をキャッシュ"""
-        if not self._current_api:
-            return
-        value = self.model_edit.text().strip()
-        if not value:
-            value = self.settings_manager.get_default_model_for_api(self._current_api)
-        self._api_model_cache[self._current_api] = value
-
-    def _apply_model_text_from_cache(self) -> None:
-        """アクティブAPIに対応するモデル名をUIへ反映"""
-        if not self._current_api:
-            return
-        value = self._api_model_cache.get(self._current_api)
-        if not value:
-            value = self.settings_manager.get_default_model_for_api(self._current_api)
-        self.model_edit.setText(value)
-
-    def _update_openai_controls_visibility(self) -> None:
-        """OpenAI専用設定の表示/非表示を切替"""
-        if hasattr(self, "openai_detail_group"):
-            self.openai_detail_group.setVisible(self.openai_radio.isChecked())
-
+            logger.error("設定の保存中にエラーが発生しました: %s", str(e))
+            QMessageBox.critical(self, self.tr_ui("error_title"), str(e))
 
     def _verify_api_keys(self):
         """APIキーの検証"""
-        selected_api = 'gemini' if self.gemini_radio.isChecked() else 'openai'
-        
-        if selected_api == 'openai':
-            api_key = self.openai_api_key_edit.text()
-            translator_service = self.translation_manager.get_translator_service('openai')
-        else: # gemini
-            api_key = self.gemini_api_key_edit.text()
-            translator_service = self.translation_manager.get_translator_service('gemini')
-        
-        if translator_service:
-            is_valid, message = translator_service.verify_api_key(api_key)
-            if is_valid:
-                QMessageBox.information(self, "APIキー検証", "APIキーは有効です。")
-            else:
-                QMessageBox.warning(self, "APIキー検証", f"APIキーが無効です: {message}")
+        api_key = self.gemini_api_key_edit.text().strip()
+        translator_service = self.translation_manager.get_translator_service("gemini")
+
+        if not translator_service:
+            QMessageBox.critical(self, self.tr_ui("error_title"), self.tr_ui("missing_translator"))
+            return
+
+        llm_mode = self.llm_mode_combo.currentData()
+        custom_model = self.custom_model_edit.text().strip()
+        translator_service.settings_manager.set_llm_mode(llm_mode)
+        translator_service.settings_manager.set_custom_model(custom_model if llm_mode == "custom" else "")
+
+        is_valid, message = translator_service.verify_api_key(api_key)
+        if is_valid:
+            QMessageBox.information(self, self.tr_ui("verify_ok_title"), self.tr_ui("verify_ok_message"))
         else:
-            QMessageBox.critical(self, "エラー", "選択されたAPIの翻訳サービスが見つかりません。")
+            QMessageBox.warning(
+                self,
+                self.tr_ui("verify_ok_title"),
+                self.tr_ui("verify_ng_message", message=message),
+            )
