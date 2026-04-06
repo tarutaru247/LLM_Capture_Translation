@@ -25,7 +25,7 @@ Google AI を活用し、高精度なOCRと翻訳を実現します。
 ### ユーザー向け
 
 1.  **実行ファイルのダウンロード**:
-    [リリースページ](https://github.com/tarutaru247/LLM_Capture_Translation/releases)から最新の `.exe` ファイルをダウンロードします。
+    [リリースページ](https://github.com/tarutaru247/LLM_Capture_Translation/releases)もしくは[Booth](https://tarutaru247.booth.pm/items/7640843)から最新の `.exe` ファイルをダウンロードします。
 2.  **起動**:
     ダウンロードした `.exe` ファイルをダブルクリックしてアプリケーションを起動します。
 3.  **初期設定**:
