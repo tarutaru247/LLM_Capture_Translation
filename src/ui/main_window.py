@@ -55,29 +55,29 @@ class ProcessingOverlay(QWidget):
     def __init__(self, parent: QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("background-color: rgba(20, 24, 33, 170);")
+        self.setStyleSheet("background-color: rgba(10, 18, 32, 190);")
 
         panel = QFrame(self)
         panel.setObjectName("processingPanel")
         panel.setStyleSheet(
             """
             QFrame#processingPanel {
-                background-color: rgba(255, 255, 255, 240);
-                border: 1px solid #d9e2ef;
+                background-color: rgba(17, 25, 40, 245);
+                border: 1px solid #4f8cff;
                 border-radius: 18px;
             }
             QLabel {
-                color: #203044;
+                color: #f8fbff;
             }
             QProgressBar {
-                border: 1px solid #cbd6e2;
+                border: 1px solid #4f8cff;
                 border-radius: 8px;
-                background: #eef3f8;
+                background: #142033;
                 min-height: 16px;
             }
             QProgressBar::chunk {
                 border-radius: 8px;
-                background-color: #2f7cf6;
+                background-color: #66b3ff;
             }
             """
         )
@@ -88,13 +88,13 @@ class ProcessingOverlay(QWidget):
 
         self.title_label = QLabel()
         self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setStyleSheet("font-size: 22px; font-weight: 700;")
+        self.title_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #ffffff;")
         layout.addWidget(self.title_label)
 
         self.detail_label = QLabel()
         self.detail_label.setAlignment(Qt.AlignCenter)
         self.detail_label.setWordWrap(True)
-        self.detail_label.setStyleSheet("font-size: 14px;")
+        self.detail_label.setStyleSheet("font-size: 14px; color: #d7e7ff;")
         layout.addWidget(self.detail_label)
 
         self.progress_bar = QProgressBar()
