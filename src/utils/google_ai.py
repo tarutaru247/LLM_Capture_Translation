@@ -22,6 +22,10 @@ RETRYABLE_MODEL_ERROR_KEYWORDS = (
     "overloaded",
     "temporarily unavailable",
 )
+MINIMAL_THINKING_MODEL_PREFIXES = (
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+)
 
 
 def get_google_model_candidates(settings_manager: SettingsManager) -> list[str]:
@@ -43,7 +47,7 @@ def format_model_chain(models: Iterable[str]) -> str:
 def supports_minimal_thinking(model_name: str | None) -> bool:
     """Return True when the target model supports minimal thinking config."""
     lowered = (model_name or "").strip().lower()
-    return lowered.startswith("gemini-3.1-flash-lite")
+    return any(lowered.startswith(prefix) for prefix in MINIMAL_THINKING_MODEL_PREFIXES)
 
 
 def build_generation_config_for_model(model_name: str | None):

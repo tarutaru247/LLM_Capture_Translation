@@ -14,9 +14,15 @@ from ..utils.utils import get_config_dir
 logger = logging.getLogger("ocr_translator")
 
 SUPPORTED_API_TYPES = ("gemini",)
-DEFAULT_PRIMARY_MODEL = "gemini-3.1-flash-lite-preview"
+DEFAULT_PRIMARY_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_FALLBACK_MODEL = "gemma-4-26b-a4b-it"
 DEFAULT_LLM_MODE = "auto"
+LEGACY_PRIMARY_MODELS = frozenset(
+    {
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-flash-lite",
+    }
+)
 
 
 class SettingsManager:
@@ -136,7 +142,11 @@ class SettingsManager:
 
             lowered = legacy_candidate.lower()
             if lowered.startswith("gemini") or lowered.startswith("gemma"):
-                if legacy_candidate not in (DEFAULT_PRIMARY_MODEL, DEFAULT_FALLBACK_MODEL):
+                if (
+                    legacy_candidate != DEFAULT_PRIMARY_MODEL
+                    and legacy_candidate != DEFAULT_FALLBACK_MODEL
+                    and legacy_candidate not in LEGACY_PRIMARY_MODELS
+                ):
                     api_settings["llm_mode"] = "custom"
                     api_settings["custom_model"] = legacy_candidate
 
