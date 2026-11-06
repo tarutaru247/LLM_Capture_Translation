@@ -13,6 +13,8 @@ import time
 import urllib.error
 import urllib.request
 
+from ..utils.model_catalog import MODELS
+
 
 def resource_root() -> Path:
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
@@ -46,54 +48,89 @@ class PlamoRuntime:
 
     @property
     def model_name(self):
-        return "PLaMo 3 Translate 0.8B / " + self.settings.get_setting("local_model", "backend").upper()
+        profile = self.settings.get_setting("local_model", "profile", "lightweight")
+        return MODELS[profile]["name"] + " / " + getattr(self, "device_used", "CPU")
+
+    def _server(self, gpu=False):
+        key = "gpu_server_path" if gpu else "llama_server_path"
+        configured = self.settings.get_setting("local_model", key, "")
+        folder = "llama-vulkan" if gpu else "llama"
+        return Path(configured).expanduser() if configured else resource_root() / "runtime" / folder / "llama-server.exe"
+
+    def _gpu_available(self, server):
+        if not server.is_file():
+            return False
+        try:
+            probe = subprocess.run([str(server), "--list-devices"], capture_output=True,
+                                   timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            import re
+            return probe.returncode == 0 and bool(re.search(r"(?:Vulkan|CUDA|SYCL|HIP)\d+:",
+                (probe.stdout + probe.stderr).decode("utf-8", errors="replace")))
+        except (OSError, subprocess.TimeoutExpired):
+            return False
 
     def start(self):
+        profile = self.settings.get_setting("local_model", "profile", "lightweight")
+        if profile not in MODELS:
+            raise ValueError("ローカルモデルを選び直してください。")
+        # Keep compatibility with the comparison runner's lightweight-only path.
+        model_path = self.settings.get_setting("local_model", profile + "_path", "")
+        if not model_path and profile == "lightweight":
+            model_path = self.settings.get_setting("local_model", "gguf_path", "")
+        model = Path(model_path).expanduser()
+        if not model_path or not model.is_file():
+            raise FileNotFoundError("モデルがありません。設定の『翻訳方式』からダウンロードするか、保存先を指定してください。")
+        device = self.settings.get_setting("local_model", "device", "auto")
+        gpu = device != "cpu" and self._gpu_available(self._server(gpu=True))
+        self.fallback_reason = ""
+        if device == "gpu" and not gpu:
+            raise RuntimeError("GPUを利用できません。GPU対応ランタイムとドライバーを確認するか、実行先を自動／CPUにしてください。")
+        try:
+            self._launch(model, gpu)
+        except Exception:
+            self._terminate_process()
+            if device != "auto" or not gpu or self._stop.is_set():
+                raise
+            self.fallback_reason = "GPUでの読み込みに失敗したためCPUを使用しています。"
+            self._launch(model, False)
+
+    def _launch(self, model, gpu):
+        server = self._server(gpu)
+        if not server.is_file():
+            raise FileNotFoundError("実行ランタイムがありません。python setup_local_runtime.py を実行してください。")
         with self._lock:
             if self._stop.is_set():
-                return
-            backend = self.settings.get_setting("local_model", "backend")
-            model = Path(self.settings.get_setting("local_model", backend + "_path"))
-            if not model.exists():
-                raise FileNotFoundError(f"モデルが見つかりません: {model}")
+                raise RuntimeError("モデルの読み込みを中断しました。")
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
             self.url = f"http://127.0.0.1:{port}"
-            if backend == "gguf":
-                executable = self.settings.get_setting("local_model", "llama_server_path", "")
-                server = Path(executable) if executable else resource_root() / "runtime/llama/llama-server.exe"
-                if not server.is_file():
-                    raise FileNotFoundError("llama-server.exe がありません。python setup_local_runtime.py を実行してください。")
-                command = [str(server), "-m", str(model), "--host", "127.0.0.1", "--port", str(port),
-                           "-c", "8192", "-np", "1", "-ngl", "auto", "--api-key", self.key,
-                           "--no-webui"]
-            elif backend == "bf16":
-                interpreter = self.settings.get_setting("local_model", "python_path", "")
-                if not interpreter and getattr(sys, "frozen", False):
-                    raise RuntimeError("BF16用のPythonを設定画面で指定してください。")
-                command = [interpreter or sys.executable, str(resource_root() / "src/translator/bf16_server.py"),
-                           "--model", str(model), "--port", str(port)]
-            else:
-                raise ValueError("モデル形式はGGUFまたはBF16を指定してください。")
-            env = dict(os.environ, PLAMO_LOCAL_KEY=self.key, HF_HUB_OFFLINE="1", HF_HUB_DISABLE_TELEMETRY="1")
-            with self.log_path.open("wb") as log:
-                self.process = subprocess.Popen(command, stdout=log, stderr=log, env=env,
+            command = [str(server), "-m", str(model), "--host", "127.0.0.1", "--port", str(port),
+                       "-c", "8192", "-np", "1", "-ngl", "all" if gpu else "0",
+                       "--api-key", self.key, "--no-webui"]
+            if not gpu:
+                command += ["--device", "none"]
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("ab") as log:
+                log.write((f"\nPLaMo runtime: {'GPU' if gpu else 'CPU'} / {model.name}\n").encode("utf-8"))
+                log.flush()
+                self.process = subprocess.Popen(command, stdout=log, stderr=log,
                                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        deadline = time.monotonic() + 300
+            process = self.process
+        deadline = time.monotonic() + 180
         while not self._stop.is_set() and time.monotonic() < deadline:
-            if self.process.poll() is not None:
+            if process.poll() is not None:
                 raise RuntimeError(f"モデルの読み込みに失敗しました。ログ: {self.log_path}")
             try:
                 request = urllib.request.Request(self.url + "/health", headers={"Authorization": "Bearer " + self.key})
                 with self._http.open(request, timeout=1) as response:
-                    if response.status == 200:
+                    if response.status == 200 and not self._stop.is_set():
+                        self.device_used = "GPU" if gpu else "CPU"
                         self.ready = True
                         return
             except (OSError, urllib.error.URLError):
                 pass
             self._stop.wait(0.2)
-        self.close()
         raise RuntimeError("モデルの読み込みが中断されたか、時間切れになりました。")
 
     def translate(self, text: str, target_lang: str) -> str:
@@ -122,6 +159,9 @@ class PlamoRuntime:
     def close(self):
         self._stop.set()
         self.ready = False
+        self._terminate_process()
+
+    def _terminate_process(self):
         with self._lock:
             process, self.process = self.process, None
             if process is not None and process.poll() is None:

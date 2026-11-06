@@ -59,6 +59,6 @@ def build_generation_config_for_model(model_name: str | None):
     return None
 
 
-def create_google_client(api_key: str) -> genai.Client:
+def create_google_client(api_key: str, timeout: int = 60) -> genai.Client:
     """Create a Google GenAI client for Gemini API."""
-    return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout * 1000))

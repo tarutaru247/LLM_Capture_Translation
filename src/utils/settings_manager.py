@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..utils import secure_storage
@@ -39,11 +40,16 @@ class SettingsManager:
         return {
             "local_model": {
                 "backend": "gguf",
-                "gguf_path": r"D:\LocalLLM\models\plamo-3-translate-0.8b-Q4_K_M.gguf",
-                "bf16_path": r"D:\LocalLLM\models\plamo-3-translate-0.8b-bf16",
+                "profile": "lightweight",
+                "device": "auto",
+                "lightweight_path": str(self._model_directory() / "plamo-3-translate-0.8b-Q4_K_M.gguf"),
+                "quality_path": str(self._model_directory() / "plamo-3-translate-2b-Q4_K_M.gguf"),
                 "llama_server_path": "",
-                "python_path": "",
+                "gpu_server_path": "",
             },
+            "translation": {"provider": "plamo"},
+            "history": {"enabled": True, "limit": 500},
+            "shortcuts": {"capture": "Ctrl+Shift+X", "selection": "Ctrl+Shift+C"},
             "api": {
                 "selected_api": "gemini",
                 "gemini_api_key": "",
@@ -55,6 +61,7 @@ class SettingsManager:
             },
             "language": {
                 "app_language": get_system_default_language(),
+                "target_language": "ja",
             },
             "ui": {
                 "theme": "system",
@@ -62,6 +69,10 @@ class SettingsManager:
                 "transcribe_original_text": False,
             },
         }
+
+    def _model_directory(self):
+        existing = Path(r"D:\LocalLLM\models")
+        return existing if existing.is_dir() else Path(self.config_dir) / "models"
 
     def _load_settings(self) -> Dict[str, Any]:
         """Load settings from disk and merge with defaults."""
@@ -71,6 +82,9 @@ class SettingsManager:
                 with open(self.config_file, "r", encoding="utf-8") as fh:
                     loaded_settings = json.load(fh)
                 self._update_nested_dict(settings, loaded_settings)
+                loaded_language = loaded_settings.get("language", {})
+                if "target_language" not in loaded_language:
+                    settings["language"]["target_language"] = loaded_language.get("app_language", "ja")
                 try:
                     self._last_loaded_mtime = os.path.getmtime(self.config_file)
                 except OSError:
@@ -119,6 +133,25 @@ class SettingsManager:
             settings = self.settings
         if not settings:
             return
+
+        local = settings.setdefault("local_model", {})
+        if local.get("gguf_path"):
+            local["lightweight_path"] = local.pop("gguf_path")
+        local["backend"] = "gguf"
+        local.pop("bf16_path", None)
+        local.pop("python_path", None)
+        if local.get("profile") not in ("lightweight", "quality"):
+            local["profile"] = "lightweight"
+        if local.get("device") not in ("auto", "cpu", "gpu"):
+            local["device"] = "auto"
+        translation = settings.setdefault("translation", {})
+        if translation.get("provider") not in ("plamo", "gemini"):
+            translation["provider"] = "plamo"
+        history = settings.setdefault("history", {})
+        try:
+            history["limit"] = min(5000, max(10, int(history.get("limit", 500))))
+        except (TypeError, ValueError):
+            history["limit"] = 500
 
         api_settings = settings.setdefault("api", {})
         api_settings["selected_api"] = "gemini"
@@ -218,8 +251,10 @@ class SettingsManager:
         try:
             self._migrate_legacy_settings()
             self._sync_active_model()
-            with open(self.config_file, "w", encoding="utf-8") as fh:
+            temporary = self.config_file + ".tmp"
+            with open(temporary, "w", encoding="utf-8") as fh:
                 json.dump(self.settings, fh, indent=4, ensure_ascii=False)
+            os.replace(temporary, self.config_file)
             try:
                 self._last_loaded_mtime = os.path.getmtime(self.config_file)
             except OSError:
@@ -278,12 +313,19 @@ class SettingsManager:
         return self.set_setting("language", "app_language", normalize_app_language(language_code))
 
     def get_target_language(self) -> str:
-        """Compatibility wrapper: translation target follows the app language."""
-        return self.get_app_language()
+        return normalize_app_language(self.get_setting("language", "target_language", "ja"))
 
     def set_target_language(self, language_code: str) -> bool:
-        """Compatibility wrapper: translation target follows the app language."""
-        return self.set_app_language(language_code)
+        return self.set_setting("language", "target_language", normalize_app_language(language_code))
+
+    def get_translation_provider(self):
+        return self.get_setting("translation", "provider", "plamo")
+
+    def get_local_profile(self):
+        return self.get_setting("local_model", "profile", "lightweight")
+
+    def get_local_model_path(self):
+        return self.get_setting("local_model", self.get_local_profile() + "_path", "")
 
     def get_selected_api(self) -> str:
         """Return the selected API provider name."""

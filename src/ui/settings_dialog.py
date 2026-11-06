@@ -1,344 +1,433 @@
-"""
-設定ダイアログモジュール
-"""
-import logging
+"""Category-based settings for translation, models and local history."""
+import copy
+from pathlib import Path
+import re
+import threading
 
-from PyQt5.QtGui import QIntValidator
+from PyQt5.QtCore import QObject, Qt, pyqtSignal
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
-    QComboBox,
-    QDialog,
-    QFormLayout,
-    QFileDialog,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMessageBox,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
+    QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QMessageBox, QProgressBar,
+    QPushButton, QScrollArea, QSpinBox, QStackedWidget, QTextBrowser, QVBoxLayout, QWidget,
 )
-
-from ..translator.translation_manager import TranslationManager
+from ..utils.history_store import HistoryStore
 from ..utils.localization import SUPPORTED_APP_LANGUAGES, get_language_name, get_ui_string
+from ..utils.model_catalog import MODELS, download_model
 from ..utils.settings_manager import SettingsManager
+from ..translator.plamo_runtime import resource_root
 
-logger = logging.getLogger("ocr_translator")
+
+def parse_shortcut(sequence):
+    parts = sequence.upper().replace("CONTROL", "CTRL").split("+")
+    if len(parts) < 2 or not re.fullmatch(r"[A-Z0-9]", parts[-1]):
+        raise ValueError("invalid shortcut")
+    modifiers = parts[:-1]
+    if len(set(modifiers)) != len(modifiers) or any(p not in ("CTRL", "ALT", "SHIFT") for p in modifiers):
+        raise ValueError("invalid modifiers")
+    return sum({"CTRL": 2, "ALT": 1, "SHIFT": 4}[p] for p in modifiers), ord(parts[-1])
+
+
+class DownloadBridge(QObject):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
 
 
 class SettingsDialog(QDialog):
-    """アプリケーション設定ダイアログ"""
-
     def __init__(self, parent=None):
         super().__init__(parent)
-
         self.settings_manager = SettingsManager()
-        self.translation_manager = TranslationManager()
         self.app_language = self.settings_manager.get_app_language()
-
-        self._init_ui()
+        self._downloading = False
+        self._cancel_download = threading.Event()
+        self._close_after_download = False
+        self.bridge = DownloadBridge(self)
+        self.bridge.progress.connect(self._download_progress)
+        self.bridge.finished.connect(self._download_finished)
+        self.setWindowTitle(self.tr_ui("settings"))
+        self.resize(900, 700)
+        self.setMinimumSize(760, 540)
+        self.setStyleSheet(parent.styleSheet() if parent else self._default_style())
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        body = QHBoxLayout()
+        body.setSpacing(0)
+        self.nav = QListWidget()
+        self.nav.setObjectName("settingsNav")
+        self.nav.setFixedWidth(205)
+        for key in ("general", "translation_method", "cloud_ocr", "shortcuts", "history", "about"):
+            self.nav.addItem(self.tr_ui(key))
+        body.addWidget(self.nav)
+        self.pages = QStackedWidget()
+        body.addWidget(self.pages, 1)
+        outer.addLayout(body, 1)
+        self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
+        self._general_page()
+        self._translation_page()
+        self._cloud_page()
+        self._shortcuts_page()
+        self._history_page()
+        self._about_page()
+        footer = QFrame()
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(24, 15, 24, 15)
+        footer_layout.addStretch()
+        self.cancel_button = QPushButton(self.tr_ui("cancel"))
+        self.cancel_button.clicked.connect(self.reject)
+        self.save_button = QPushButton(self.tr_ui("save"))
+        self.save_button.setObjectName("primary")
+        self.save_button.clicked.connect(self._save_settings)
+        footer_layout.addWidget(self.cancel_button)
+        footer_layout.addWidget(self.save_button)
+        outer.addWidget(footer)
+        self.nav.setCurrentRow(0)
         self._load_settings()
 
-        logger.info("設定ダイアログを初期化しました")
+    def _default_style(self):
+        from .theme import stylesheet
+        return stylesheet()
 
-    def tr_ui(self, key: str, **kwargs) -> str:
+    def tr_ui(self, key, **kwargs):
         return get_ui_string(self.app_language, key, **kwargs)
 
-    def _init_ui(self):
-        """UIの初期化"""
-        self.setMinimumWidth(520)
+    def _page(self, key):
+        page = QWidget()
+        page.setObjectName("settingsContent")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(34, 28, 34, 28)
+        layout.setSpacing(18)
+        heading = QLabel(self.tr_ui(key))
+        heading.setObjectName("heading")
+        layout.addWidget(heading)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(page)
+        self.pages.addWidget(scroll)
+        return layout
 
-        self.setStyleSheet(
-            """
-            QDialog {
-                background-color: #f0f0f0;
-            }
-            QLabel {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-                color: #333333;
-            }
-            QPushButton {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-                background-color: #4CAF50;
-                color: white;
-                border-radius: 5px;
-                padding: 10px 20px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QLineEdit, QComboBox {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-                border: 1px solid #cccccc;
-                border-radius: 3px;
-                padding: 5px;
-                background-color: white;
-            }
-            QGroupBox {
-                font-family: "Yu Gothic UI", "Meiryo UI", sans-serif;
-                font-size: 14px;
-                font-weight: bold;
-                margin-top: 1ex;
-                border: 1px solid #cccccc;
-                border-radius: 5px;
-                padding-top: 1ex;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 0 3px;
-                background-color: #f0f0f0;
-            }
-            """
-        )
+    def _note(self, layout, text):
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setObjectName("muted")
+        layout.addWidget(label)
+        return label
 
-        main_layout = QVBoxLayout(self)
+    def _combo(self, options):
+        combo = QComboBox()
+        for label, value in options:
+            combo.addItem(label, value)
+        return combo
 
-        self.language_group = QGroupBox()
-        language_form = QFormLayout(self.language_group)
-        language_form.setContentsMargins(10, 20, 10, 10)
-        language_form.setSpacing(12)
+    def _general_page(self):
+        layout = self._page("general")
+        form = QFormLayout()
+        form.setSpacing(18)
+        languages = [(get_language_name(code), code) for code in SUPPORTED_APP_LANGUAGES]
+        self.app_language_combo = self._combo(languages)
+        self.target_language_combo = self._combo(languages)
+        self.theme_combo = self._combo([(self.tr_ui("theme_" + k), k) for k in ("system", "light", "dark")])
+        form.addRow(self.tr_ui("ui_language"), self.app_language_combo)
+        form.addRow(self.tr_ui("target_language"), self.target_language_combo)
+        form.addRow(self.tr_ui("appearance"), self.theme_combo)
+        layout.addLayout(form)
+        layout.addStretch()
 
-        self.app_language_label = QLabel()
-        self.app_language_combo = QComboBox()
-        for language_code in SUPPORTED_APP_LANGUAGES:
-            self.app_language_combo.addItem(get_language_name(language_code), language_code)
-        self.app_language_combo.currentIndexChanged.connect(self._on_app_language_changed)
-        language_form.addRow(self.app_language_label, self.app_language_combo)
-        main_layout.addWidget(self.language_group)
+    def _translation_page(self):
+        layout = self._page("translation_method")
+        self.provider_combo = self._combo([(self.tr_ui("provider_local"), "plamo"), (self.tr_ui("provider_cloud"), "gemini")])
+        self.provider_combo.hide()
+        self.provider_buttons = []
+        provider_row = QHBoxLayout()
+        self.provider_group = QButtonGroup(self)
+        self.provider_group.setExclusive(True)
+        for index, key in enumerate(("provider_local", "provider_cloud")):
+            button = QPushButton(self.tr_ui(key))
+            button.setObjectName("providerChoice")
+            button.setMinimumHeight(58)
+            button.setCheckable(True)
+            button.clicked.connect(lambda checked=False, i=index: self.provider_combo.setCurrentIndex(i))
+            self.provider_group.addButton(button, index)
+            self.provider_buttons.append(button)
+            provider_row.addWidget(button, 1)
+        layout.addLayout(provider_row)
+        self._note(layout, self.tr_ui("provider_note"))
+        self.local_group = QWidget()
+        local = QVBoxLayout(self.local_group)
+        local.setContentsMargins(0, 8, 0, 0)
+        local.setSpacing(14)
+        self.profile_combo = self._combo([(self.tr_ui("profile_light"), "lightweight"), (self.tr_ui("profile_quality"), "quality")])
+        self.device_combo = self._combo([(self.tr_ui("device_" + key), key) for key in ("auto", "cpu", "gpu")])
+        form = QFormLayout()
+        form.setSpacing(16)
+        form.addRow(self.tr_ui("local_model_choice"), self.profile_combo)
+        form.addRow(self.tr_ui("device"), self.device_combo)
+        local.addLayout(form)
+        self._note(local, self.tr_ui("device_note"))
+        local.addWidget(QLabel(self.tr_ui("model_location")))
+        self.model_path_edit = QLineEdit()
+        browse = QPushButton(self.tr_ui("browse"))
+        self.browse_button = browse
+        browse.clicked.connect(self._browse_model)
+        row = QHBoxLayout()
+        row.addWidget(self.model_path_edit, 1)
+        row.addWidget(browse)
+        local.addLayout(row)
+        self.download_button = QPushButton(self.tr_ui("download"))
+        self.download_button.clicked.connect(self._download_model)
+        local.addWidget(self.download_button)
+        self._note(local, self.tr_ui("download_note"))
+        self.download_progress = QProgressBar()
+        self.download_progress.setRange(0, 100)
+        self.download_progress.hide()
+        local.addWidget(self.download_progress)
+        self.download_status = self._note(local, "")
+        runtime = getattr(self.parent(), "runtime", None)
+        status = runtime.model_name if runtime is not None and runtime.ready else self.tr_ui("not_ready")
+        self._note(local, status)
+        self.reload_button = QPushButton(self.tr_ui("reload"))
+        self.reload_button.clicked.connect(self._save_and_reload)
+        local.addWidget(self.reload_button)
+        self.advanced_button = QPushButton("▸ " + self.tr_ui("advanced"))
+        self.advanced_button.setObjectName("ghost")
+        self.advanced_button.setCheckable(True)
+        self.advanced_widget = QWidget()
+        advanced = QFormLayout(self.advanced_widget)
+        self.cpu_runtime_edit = QLineEdit()
+        self.gpu_runtime_edit = QLineEdit()
+        advanced.addRow(self.tr_ui("cpu_runtime"), self.cpu_runtime_edit)
+        advanced.addRow(self.tr_ui("gpu_runtime"), self.gpu_runtime_edit)
+        note = QLabel(self.tr_ui("format_note"))
+        note.setWordWrap(True)
+        advanced.addRow(note)
+        self.advanced_widget.hide()
+        self.advanced_button.toggled.connect(self.advanced_widget.setVisible)
+        local.addWidget(self.advanced_button)
+        local.addWidget(self.advanced_widget)
+        layout.addWidget(self.local_group)
+        self._note(layout, self.tr_ui("save_reload_note"))
+        layout.addStretch()
+        self.provider_combo.currentIndexChanged.connect(self._provider_changed)
+        self.profile_combo.currentIndexChanged.connect(self._profile_changed)
 
-        self.local_group = QGroupBox()
-        local_form = QFormLayout(self.local_group)
-        self.backend_combo = QComboBox()
-        self.backend_combo.addItem("GGUF (Q4_K_M / llama.cpp)", "gguf")
-        self.backend_combo.addItem("BF16 (Transformers)", "bf16")
-        self.backend_label = QLabel()
-        local_form.addRow(self.backend_label, self.backend_combo)
-        self.local_edits = {}
-        self.local_labels = {}
-        for key in ("gguf_path", "bf16_path", "llama_server_path", "python_path"):
-            label = QLabel()
-            edit = QLineEdit()
-            browse = QPushButton("…")
-            browse.setMaximumWidth(45)
-            browse.clicked.connect(lambda checked=False, field=key: self._browse_local_path(field))
-            row = QHBoxLayout()
-            row.addWidget(edit)
-            row.addWidget(browse)
-            local_form.addRow(label, row)
-            self.local_labels[key] = label
-            self.local_edits[key] = edit
-        self.local_note = QLabel()
-        self.local_note.setWordWrap(True)
-        local_form.addRow(self.local_note)
-        main_layout.addWidget(self.local_group)
-
-        api_container = QWidget()
-        api_layout = QVBoxLayout(api_container)
-
-        self.api_group = QGroupBox()
-        api_form = QFormLayout(self.api_group)
-        api_form.setContentsMargins(10, 20, 10, 10)
-        api_form.setSpacing(12)
-
-        self.gemini_api_key_label = QLabel()
+    def _cloud_page(self):
+        layout = self._page("cloud_ocr")
+        self._note(layout, self.tr_ui("api_note"))
+        form = QFormLayout()
+        form.setSpacing(18)
         self.gemini_api_key_edit = QLineEdit()
         self.gemini_api_key_edit.setEchoMode(QLineEdit.Password)
-        api_form.addRow(self.gemini_api_key_label, self.gemini_api_key_edit)
-
-        self.llm_mode_label = QLabel()
-        self.llm_mode_combo = QComboBox()
-        self.llm_mode_combo.currentIndexChanged.connect(self._update_custom_model_visibility)
-        api_form.addRow(self.llm_mode_label, self.llm_mode_combo)
-
-        self.auto_model_note = QLabel()
-        self.auto_model_note.setWordWrap(True)
-        self.auto_model_note.setStyleSheet("font-size: 12px; color: #666666;")
-        api_form.addRow("", self.auto_model_note)
-
-        self.custom_model_label = QLabel()
+        self.llm_mode_combo = self._combo([(self.tr_ui("llm_auto"), "auto"), (self.tr_ui("llm_custom"), "custom")])
         self.custom_model_edit = QLineEdit()
-        api_form.addRow(self.custom_model_label, self.custom_model_edit)
+        self.custom_model_edit.setPlaceholderText("gemini-3.5-flash-lite")
+        self.timeout_spin = QSpinBox()
+        self.timeout_spin.setRange(10, 300)
+        self.timeout_spin.setSuffix(" s")
+        form.addRow(self.tr_ui("google_api_key"), self.gemini_api_key_edit)
+        form.addRow(self.tr_ui("llm_setting"), self.llm_mode_combo)
+        form.addRow(self.tr_ui("model_name"), self.custom_model_edit)
+        form.addRow(self.tr_ui("timeout"), self.timeout_spin)
+        self.llm_mode_combo.currentIndexChanged.connect(lambda: self.custom_model_edit.setEnabled(self.llm_mode_combo.currentData() == "custom"))
+        layout.addLayout(form)
+        self._note(layout, self.tr_ui("auto_model_note"))
+        layout.addStretch()
 
-        self.custom_model_note = QLabel()
-        self.custom_model_note.setWordWrap(True)
-        self.custom_model_note.setStyleSheet("font-size: 12px; color: #666666;")
-        api_form.addRow("", self.custom_model_note)
+    def _shortcuts_page(self):
+        layout = self._page("shortcuts")
+        self.capture_shortcut = QKeySequenceEdit()
+        self.selection_shortcut = QKeySequenceEdit()
+        form = QFormLayout()
+        form.setSpacing(18)
+        form.addRow(self.tr_ui("shortcut_capture"), self.capture_shortcut)
+        form.addRow(self.tr_ui("shortcut_selection"), self.selection_shortcut)
+        layout.addLayout(form)
+        self._note(layout, self.tr_ui("shortcut_note"))
+        layout.addStretch()
 
-        self.timeout_label = QLabel()
-        self.timeout_edit = QLineEdit()
-        self.timeout_edit.setValidator(QIntValidator(1, 300))
-        api_form.addRow(self.timeout_label, self.timeout_edit)
+    def _history_page(self):
+        layout = self._page("history")
+        self.history_enabled = QCheckBox(self.tr_ui("save_history"))
+        self.history_limit = QSpinBox()
+        self.history_limit.setRange(10, 5000)
+        layout.addWidget(self.history_enabled)
+        form = QFormLayout()
+        form.addRow(self.tr_ui("history_limit"), self.history_limit)
+        layout.addLayout(form)
+        self._note(layout, self.tr_ui("history_note"))
+        self.clear_button = QPushButton(self.tr_ui("clear_history"))
+        self.clear_button.setObjectName("danger")
+        self.clear_button.clicked.connect(self._clear_history)
+        layout.addWidget(self.clear_button)
+        layout.addStretch()
 
-        api_layout.addWidget(self.api_group)
+    def _about_page(self):
+        layout = self._page("about")
+        layout.addWidget(QLabel("スクショAI翻訳  ·  Built with PLaMo"))
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        notice = resource_root() / "docs/THIRD_PARTY_NOTICES.md"
+        license_path = resource_root() / "docs/licenses/PLaMo-ja.txt"
+        browser.setPlainText(notice.read_text(encoding="utf-8") + "\n\n" + license_path.read_text(encoding="utf-8"))
+        layout.addWidget(browser, 1)
 
-        verify_layout = QHBoxLayout()
-        verify_layout.addStretch()
-        self.verify_button = QPushButton()
-        self.verify_button.clicked.connect(self._verify_api_keys)
-        verify_layout.addWidget(self.verify_button)
-        api_layout.addLayout(verify_layout)
-        api_layout.addStretch()
-
-        main_layout.addWidget(api_container)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-
-        self.cancel_button = QPushButton()
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
-
-        self.save_button = QPushButton()
-        self.save_button.clicked.connect(self._save_settings)
-        self.save_button.setDefault(True)
-        button_layout.addWidget(self.save_button)
-
-        main_layout.addLayout(button_layout)
-        self._apply_texts()
-
-    def _apply_texts(self):
-        """現在のアプリ言語に合わせて文言を反映"""
-        self.setWindowTitle(self.tr_ui("settings_dialog_title"))
-        self.app_language_label.setText(self.tr_ui("app_language"))
-        self.local_group.setTitle(self.tr_ui("local_group"))
-        self.backend_label.setText(self.tr_ui("local_backend"))
-        for key, label in self.local_labels.items():
-            label.setText(self.tr_ui(key))
-        self.local_note.setText(self.tr_ui("local_note"))
-
-        self.language_group.setTitle(self.tr_ui("settings_language_group"))
-        self.api_group.setTitle(self.tr_ui("settings_api_group"))
-
-        self.gemini_api_key_label.setText(self.tr_ui("google_api_key"))
-        self.gemini_api_key_edit.setPlaceholderText(self.tr_ui("google_api_key_placeholder"))
-
-        self.llm_mode_label.setText(self.tr_ui("llm_setting"))
-        current_mode = self.llm_mode_combo.currentData()
-        self.llm_mode_combo.blockSignals(True)
-        self.llm_mode_combo.clear()
-        self.llm_mode_combo.addItem(self.tr_ui("llm_auto"), "auto")
-        self.llm_mode_combo.addItem(self.tr_ui("llm_custom"), "custom")
-        mode_index = self.llm_mode_combo.findData(current_mode if current_mode else "auto")
-        self.llm_mode_combo.setCurrentIndex(mode_index if mode_index >= 0 else 0)
-        self.llm_mode_combo.blockSignals(False)
-
-        self.auto_model_note.setText(self.tr_ui("auto_model_note"))
-        self.custom_model_label.setText(self.tr_ui("model_name"))
-        self.custom_model_edit.setPlaceholderText(self.tr_ui("custom_model_placeholder"))
-        self.custom_model_note.setText(self.tr_ui("custom_model_note"))
-        self.timeout_label.setText(self.tr_ui("timeout"))
-        self.timeout_edit.setPlaceholderText("60")
-        self.verify_button.setText(self.tr_ui("verify_api_key"))
-        self.cancel_button.setText(self.tr_ui("cancel"))
-        self.save_button.setText(self.tr_ui("save"))
+    def _set_combo(self, combo, value):
+        combo.blockSignals(True)
+        combo.setCurrentIndex(max(0, combo.findData(value)))
+        combo.blockSignals(False)
 
     def _load_settings(self):
-        """設定を読み込んでUIに反映"""
-        gemini_api_key = self.settings_manager.get_api_key("gemini")
-        llm_mode = self.settings_manager.get_llm_mode()
-        custom_model = self.settings_manager.get_custom_model()
-        timeout = self.settings_manager.get_timeout()
-        app_language = self.settings_manager.get_app_language()
-        index = self.backend_combo.findData(self.settings_manager.get_setting("local_model", "backend"))
-        self.backend_combo.setCurrentIndex(max(0, index))
-        for key, edit in self.local_edits.items():
-            edit.setText(self.settings_manager.get_setting("local_model", key, ""))
+        settings = self.settings_manager
+        self._paths = {p: settings.get_setting("local_model", p + "_path") for p in MODELS}
+        self._current_profile = settings.get_local_profile()
+        for combo, value in [(self.app_language_combo, settings.get_app_language()),
+                             (self.target_language_combo, settings.get_target_language()),
+                             (self.theme_combo, settings.get_setting("ui", "theme", "system")),
+                             (self.provider_combo, settings.get_translation_provider()),
+                             (self.profile_combo, self._current_profile),
+                             (self.device_combo, settings.get_setting("local_model", "device", "auto")),
+                             (self.llm_mode_combo, settings.get_llm_mode())]:
+            self._set_combo(combo, value)
+        self.model_path_edit.setText(self._paths[self._current_profile])
+        self.cpu_runtime_edit.setText(settings.get_setting("local_model", "llama_server_path", ""))
+        self.gpu_runtime_edit.setText(settings.get_setting("local_model", "gpu_server_path", ""))
+        self.gemini_api_key_edit.setText(settings.get_api_key() or "")
+        self.custom_model_edit.setText(settings.get_custom_model())
+        self.custom_model_edit.setEnabled(settings.get_llm_mode() == "custom")
+        self.timeout_spin.setValue(settings.get_timeout())
+        self.capture_shortcut.setKeySequence(QKeySequence(settings.get_setting("shortcuts", "capture")))
+        self.selection_shortcut.setKeySequence(QKeySequence(settings.get_setting("shortcuts", "selection")))
+        self.history_enabled.setChecked(settings.get_setting("history", "enabled", True))
+        self.history_limit.setValue(settings.get_setting("history", "limit", 500))
+        self._provider_changed()
 
-        self.gemini_api_key_edit.setText(gemini_api_key if gemini_api_key else "")
-        self.custom_model_edit.setText(custom_model)
-        self.timeout_edit.setText(str(timeout) if timeout else "")
+    def _provider_changed(self):
+        self.local_group.setVisible(self.provider_combo.currentData() == "plamo")
+        self.provider_buttons[self.provider_combo.currentIndex()].setChecked(True)
 
-        lang_index = self.app_language_combo.findData(app_language)
-        self.app_language_combo.setCurrentIndex(lang_index if lang_index >= 0 else 0)
+    def _profile_changed(self):
+        if not hasattr(self, "_paths"):
+            return
+        self._paths[self._current_profile] = self.model_path_edit.text().strip()
+        self._current_profile = self.profile_combo.currentData()
+        self.model_path_edit.setText(self._paths[self._current_profile])
 
-        mode_index = self.llm_mode_combo.findData(llm_mode)
-        self.llm_mode_combo.setCurrentIndex(mode_index if mode_index >= 0 else 0)
-        self._update_custom_model_visibility()
+    def _browse_model(self):
+        path, _ = QFileDialog.getOpenFileName(self, self.tr_ui("model_location"), self.model_path_edit.text(), "GGUF (*.gguf)")
+        if path:
+            self.model_path_edit.setText(path)
 
-    def _on_app_language_changed(self):
-        """言語選択変更時に文言を即時更新"""
-        self.app_language = self.app_language_combo.currentData() or self.settings_manager.get_app_language()
-        self._apply_texts()
-        self._update_custom_model_visibility()
+    def _download_model(self):
+        if self._downloading:
+            return
+        path = self.model_path_edit.text().strip()
+        if not path:
+            self._browse_model()
+            path = self.model_path_edit.text().strip()
+            if not path:
+                return
+        self._downloading = True
+        self._cancel_download.clear()
+        self._lock_download_ui(True)
+        self.download_progress.show()
+        self.download_progress.setValue(0)
+        profile = self._current_profile
+        def run():
+            error = ""
+            try:
+                if Path(path).is_file():
+                    import hashlib
+                    with Path(path).open("rb") as file:
+                        digest = hashlib.file_digest(file, "sha256").hexdigest()
+                    if digest != MODELS[profile]["sha256"]:
+                        raise RuntimeError(self.tr_ui("invalid_model_path"))
+                else:
+                    download_model(profile, path, lambda received,total: self.bridge.progress.emit(int(received * 100 / total)), self._cancel_download.is_set)
+            except Exception as exc:
+                error = str(exc)
+            self.bridge.finished.emit(error)
+        threading.Thread(target=run, daemon=True, name="model-download").start()
 
-    def _update_custom_model_visibility(self):
-        """カスタムモデル入力欄の表示を切り替える"""
-        is_custom = self.llm_mode_combo.currentData() == "custom"
-        self.custom_model_label.setVisible(is_custom)
-        self.custom_model_edit.setVisible(is_custom)
-        self.custom_model_note.setVisible(is_custom)
-        self.auto_model_note.setVisible(not is_custom)
+    def _lock_download_ui(self, locked):
+        for widget in (self.nav, self.provider_combo, self.profile_combo, self.device_combo,
+                       self.model_path_edit, self.browse_button, self.download_button, self.reload_button, self.save_button):
+            widget.setEnabled(not locked)
+        for button in self.provider_buttons:
+            button.setEnabled(not locked)
+
+    def _download_progress(self, percent):
+        self.download_progress.setValue(percent)
+        self.download_status.setText(f"{percent}%")
+
+    def _download_finished(self, error):
+        self._downloading = False
+        self._lock_download_ui(False)
+        self.download_progress.hide()
+        self.download_status.setText(error or self.tr_ui("downloaded"))
+        if self._close_after_download:
+            super().reject()
+
+    def _save_and_reload(self):
+        self.force_reload = True
+        self._save_settings()
 
     def _save_settings(self):
-        """UIの設定を保存"""
+        capture = self.capture_shortcut.keySequence().toString(QKeySequence.PortableText)
+        selection = self.selection_shortcut.keySequence().toString(QKeySequence.PortableText)
         try:
-            gemini_api_key = self.gemini_api_key_edit.text()
-            llm_mode = self.llm_mode_combo.currentData()
-            custom_model = self.custom_model_edit.text().strip()
-            timeout = int(self.timeout_edit.text()) if self.timeout_edit.text().isdigit() else 60
-            app_language = self.app_language_combo.currentData()
-            backend = self.backend_combo.currentData()
-            from pathlib import Path
-            model_path = Path(self.local_edits[backend + "_path"].text().strip())
-            if not self.local_edits[backend + "_path"].text().strip() or (backend == "gguf" and not model_path.is_file()) or (backend == "bf16" and not (model_path / "config.json").is_file()):
-                QMessageBox.warning(self, self.tr_ui("validation_title"), self.tr_ui("invalid_model_path"))
-                return
-
-            if llm_mode == "custom" and not custom_model:
-                QMessageBox.warning(self, self.tr_ui("validation_title"), self.tr_ui("validation_custom_model"))
-                return
-
-            self.settings_manager.set_api_key("gemini", gemini_api_key)
-            self.settings_manager.set_llm_mode(llm_mode)
-            self.settings_manager.set_custom_model(custom_model if llm_mode == "custom" else "")
-            self.settings_manager.set_timeout(timeout)
-            self.settings_manager.set_app_language(app_language)
-            self.settings_manager.set_selected_api("gemini")
-            self.settings_manager.set_setting("local_model", "backend", backend)
-            for key, edit in self.local_edits.items():
-                self.settings_manager.set_setting("local_model", key, edit.text().strip())
-
-            if self.settings_manager.save_settings():
-                logger.info("設定を保存しました")
-                self.accept()
-            else:
-                QMessageBox.critical(self, self.tr_ui("error_title"), self.tr_ui("error_title"))
-        except Exception as e:
-            logger.error("設定の保存中にエラーが発生しました: %s", str(e))
-            QMessageBox.critical(self, self.tr_ui("error_title"), str(e))
-
-    def _verify_api_keys(self):
-        """APIキーの検証"""
-        api_key = self.gemini_api_key_edit.text().strip()
-        translator_service = self.translation_manager.get_translator_service("gemini")
-
-        if not translator_service:
-            QMessageBox.critical(self, self.tr_ui("error_title"), self.tr_ui("missing_translator"))
+            first, second = parse_shortcut(capture), parse_shortcut(selection)
+            if first == second:
+                raise ValueError("duplicate")
+        except ValueError:
+            QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("shortcut_invalid"))
             return
-
-        llm_mode = self.llm_mode_combo.currentData()
-        custom_model = self.custom_model_edit.text().strip()
-        translator_service.settings_manager.set_llm_mode(llm_mode)
-        translator_service.settings_manager.set_custom_model(custom_model if llm_mode == "custom" else "")
-
-        is_valid, message = translator_service.verify_api_key(api_key)
-        if is_valid:
-            QMessageBox.information(self, self.tr_ui("verify_ok_title"), self.tr_ui("verify_ok_message"))
+        if self.llm_mode_combo.currentData() == "custom" and not self.custom_model_edit.text().strip():
+            QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("validation_custom_model"))
+            return
+        if self.provider_combo.currentData() == "gemini" and not self.gemini_api_key_edit.text().strip():
+            QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("api_required"))
+            return
+        settings = self.settings_manager
+        before = copy.deepcopy(settings.settings)
+        self._paths[self._current_profile] = self.model_path_edit.text().strip()
+        for category, values in {
+            "translation": {"provider": self.provider_combo.currentData()},
+            "local_model": {"profile": self._current_profile, "device": self.device_combo.currentData(),
+                            "lightweight_path": self._paths["lightweight"], "quality_path": self._paths["quality"],
+                            "llama_server_path": self.cpu_runtime_edit.text().strip(), "gpu_server_path": self.gpu_runtime_edit.text().strip()},
+            "history": {"enabled": self.history_enabled.isChecked(), "limit": self.history_limit.value()},
+            "shortcuts": {"capture": capture, "selection": selection},
+            "ui": {"theme": self.theme_combo.currentData()},
+        }.items():
+            for key, value in values.items():
+                settings.set_setting(category, key, value)
+        settings.set_app_language(self.app_language_combo.currentData())
+        settings.set_target_language(self.target_language_combo.currentData())
+        settings.set_api_key("gemini", self.gemini_api_key_edit.text().strip())
+        settings.set_custom_model(self.custom_model_edit.text().strip())
+        settings.set_llm_mode(self.llm_mode_combo.currentData())
+        settings.set_timeout(self.timeout_spin.value())
+        if settings.save_settings():
+            self.accept()
         else:
-            QMessageBox.warning(
-                self,
-                self.tr_ui("verify_ok_title"),
-                self.tr_ui("verify_ng_message", message=message),
-            )
+            settings.settings = before
+            QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("save_failed"))
 
-    def _browse_local_path(self, key):
-        if key == "bf16_path":
-            path = QFileDialog.getExistingDirectory(self, self.tr_ui(key))
+    def _clear_history(self):
+        if QMessageBox.question(self, self.tr_ui("history"), self.tr_ui("clear_confirm"), QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
+            HistoryStore(self.settings_manager.config_dir).clear()
+            self.clear_button.setEnabled(False)
+
+    def reject(self):
+        if self._downloading:
+            self._close_after_download = True
+            self._cancel_download.set()
+            self.cancel_button.setEnabled(False)
+            return
+        super().reject()
+
+    def closeEvent(self, event):
+        if self._downloading:
+            self.reject()
+            event.ignore()
         else:
-            path, _ = QFileDialog.getOpenFileName(self, self.tr_ui(key))
-        if path:
-            self.local_edits[key].setText(path)
+            super().closeEvent(event)

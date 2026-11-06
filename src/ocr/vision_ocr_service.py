@@ -39,7 +39,7 @@ class VisionOCRService(OCRService):
         """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
         model_candidates = get_google_model_candidates(self.settings_manager)
         last_error: Exception | None = None
-        client = create_google_client(self.settings_manager.get_api_key("gemini") or "")
+        client = create_google_client(self.settings_manager.get_api_key("gemini") or "", timeout)
 
         for index, model_name in enumerate(model_candidates):
             try:

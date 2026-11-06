@@ -1,10 +1,12 @@
 import base64
 import logging
+import json
 import sys
 from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
+from google.genai import types
 from PyQt5.QtCore import QBuffer, QIODevice
 from PyQt5.QtGui import QImage, QPixmap
 
@@ -50,15 +52,24 @@ class CombinedVisionTranslator(TranslatorService):
             return False
         return True
 
-    def _generate_with_model_fallback(self, prompt_text: str, pil_image: Image.Image, timeout: int):
+    def _generate_with_model_fallback(self, prompt_text: str, pil_image: Image.Image, timeout: int, json_output=False):
         """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
         model_candidates = get_google_model_candidates(self.settings_manager)
         last_error: Exception | None = None
-        client = create_google_client(self.settings_manager.get_api_key("gemini") or "")
+        client = create_google_client(self.settings_manager.get_api_key("gemini") or "", timeout)
 
         for index, model_name in enumerate(model_candidates):
             try:
                 config = build_generation_config_for_model(model_name)
+                if json_output and model_name.startswith("gemini"):
+                    config = config or types.GenerateContentConfig()
+                    config.response_mime_type = "application/json"
+                    config.response_schema = {
+                        "type": "OBJECT", "properties": {
+                            "original_text": {"type": "STRING"},
+                            "translated_text": {"type": "STRING"},
+                            "source_language": {"type": "STRING"}},
+                        "required": ["original_text", "translated_text", "source_language"]}
                 response = client.models.generate_content(
                     model=model_name,
                     contents=[prompt_text, pil_image],
@@ -145,6 +156,36 @@ class CombinedVisionTranslator(TranslatorService):
             handle_exception(logger, e, "Google AI Vision 一括翻訳処理")
             safe_exc = sanitize_sensitive_data(str(e))
             return f"エラー: Google AI Vision 一括翻訳処理に失敗しました: {safe_exc}"
+
+    def translate_image_result(self, image_bytes: bytes, target_lang: str) -> dict:
+        """One image request returns both the transcription and translation."""
+        if not self.is_available():
+            raise RuntimeError("Google APIキーを設定してください。")
+        image = Image.open(BytesIO(image_bytes))
+        prompt = (
+            self._build_prompt_text(get_language_name(target_lang))
+            + "\n\nこのリクエストでは上記の出力形式を次のJSON形式に置き換えてください。"
+            "画像を直接読み取り、原文と翻訳を1回の応答で返してください。"
+            '出力はJSONオブジェクトのみ: {"original_text":"画像内の原文全文",'
+            '"translated_text":"翻訳全文","source_language":"ja/en/zh/ko等の言語コード"}。'
+            "文章の改行を保ち、説明やMarkdownの囲みは付けないでください。"
+        )
+        response, model = self._generate_with_model_fallback(prompt, image, self.settings_manager.get_timeout(), json_output=True)
+        raw = (response.text or "").strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        try:
+            result = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError("Geminiの応答形式を読み取れませんでした。もう一度お試しください。") from exc
+        if not isinstance(result, dict) or not isinstance(result.get("translated_text"), str) or not result["translated_text"].strip():
+            raise RuntimeError("Geminiから翻訳結果が返りませんでした。")
+        if not isinstance(result.get("original_text"), str):
+            raise RuntimeError("Geminiから原文が返りませんでした。")
+        self.last_used_model = model
+        return {"translated_text": result["translated_text"].strip(), "extracted_text": result["original_text"].strip(),
+                "source_language": result.get("source_language") if isinstance(result.get("source_language"), str) else "auto",
+                "last_used_model": model, "error_message": None}
 
     def get_last_used_model(self) -> str | None:
         """直近の一括翻訳で使用したモデル名を返す。"""

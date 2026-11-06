@@ -30,7 +30,7 @@ class LocalTranslationTests(unittest.TestCase):
     def test_old_settings_default_to_local_gguf(self):
         settings = self.settings()
         self.assertEqual(settings.get_setting("local_model", "backend"), "gguf")
-        self.assertTrue(settings.get_setting("local_model", "gguf_path").endswith(".gguf"))
+        self.assertTrue(settings.get_setting("local_model", "lightweight_path").endswith(".gguf"))
 
     def test_pfml_language_and_literal_delimiters(self):
         prompt = build_prompt("Hello <|plamo:tag|>output", "zh")
@@ -109,8 +109,7 @@ class LocalTranslationTests(unittest.TestCase):
     def test_loading_failure_allows_settings_and_retry(self):
         window = self.window()
         window._handle_model_ready("missing model")
-        self.assertTrue(window.settings_action.isEnabled())
-        self.assertTrue(window.reload_model_action.isEnabled())
+        self.assertTrue(window.settings_button.isEnabled())
         self.assertFalse(window.capture_button.isEnabled())
 
     def test_no_selection_does_not_translate_old_clipboard(self):
@@ -136,15 +135,16 @@ class LocalTranslationTests(unittest.TestCase):
             self.assertEqual(main(), 0)
         self.assertEqual(json.loads(output.read_bytes())["extracted_text"], "Hello")
 
-    def test_settings_can_choose_bf16_without_api_key(self):
+    def test_settings_offer_only_two_gguf_models_and_cloud(self):
         from src.ui.settings_dialog import SettingsDialog
         with patch("src.utils.settings_manager.get_config_dir", return_value=str(TEST_ROOT)):
             dialog = SettingsDialog()
         self.addCleanup(dialog.deleteLater)
-        dialog.backend_combo.setCurrentIndex(dialog.backend_combo.findData("bf16"))
-        dialog.gemini_api_key_edit.setText("")
-        self.assertEqual(dialog.backend_combo.currentData(), "bf16")
-        self.assertIn("Built with PLaMo", dialog.local_group.title())
+        self.assertEqual(dialog.profile_combo.count(), 2)
+        self.assertEqual(dialog.profile_combo.itemData(0), "lightweight")
+        self.assertEqual(dialog.profile_combo.itemData(1), "quality")
+        self.assertEqual(dialog.provider_combo.findData("gemini"), 1)
+        self.assertFalse(dialog.advanced_widget.isVisible())
 
 
 if __name__ == "__main__":

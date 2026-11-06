@@ -57,6 +57,6 @@ Qtの再リンク・差し替え等の条件も満たす配布方式を選んで
 ## その他のライブラリ
 
 Google GenAI (Apache-2.0)、Pillow (HPND等)、pynput (LGPL-3.0)、
-BF16用のPyTorch (BSD系)、Transformers / Accelerate (Apache-2.0)、Numba (BSD系) 等は
+過去のBF16比較用のPyTorch (BSD系)、Transformers / Accelerate (Apache-2.0)、Numba (BSD系) 等は
 それぞれの配布物のライセンスが適用されます。再配布する依存物と推移的依存物の表示も保持してください。
-BF16のPython環境はexeに含めず、利用者の別環境で実行します。
+現在のアプリはBF16を使わず、これらBF16用ライブラリを配布物に含めません。

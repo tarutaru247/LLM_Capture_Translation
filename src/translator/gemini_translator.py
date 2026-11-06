@@ -24,6 +24,7 @@ class GeminiTranslator(TranslatorService):
     def __init__(self) -> None:
         self.settings_manager = SettingsManager()
         self._api_key: Optional[str] = None
+        self.last_used_model = None
         logger.info("GeminiTranslatorを初期化しました")
 
     def _refresh_api_key(self) -> None:
@@ -33,7 +34,7 @@ class GeminiTranslator(TranslatorService):
         """Auto mode では一時的な障害時にフォールバックモデルへ切り替える。"""
         model_candidates = get_google_model_candidates(self.settings_manager)
         last_error: Exception | None = None
-        client = create_google_client(self._api_key or "")
+        client = create_google_client(self._api_key or "", timeout)
 
         for index, model_name in enumerate(model_candidates):
             try:
@@ -76,7 +77,7 @@ class GeminiTranslator(TranslatorService):
 
         try:
             if not target_lang:
-                target_lang = self.settings_manager.get_app_language()
+                target_lang = self.settings_manager.get_target_language()
 
             target_language_name = get_language_name(target_lang)
 
@@ -109,6 +110,7 @@ class GeminiTranslator(TranslatorService):
                 self.settings_manager.get_timeout(),
             )
             translated_text = (response.text or "").strip()
+            self.last_used_model = model_name
             logger.info("翻訳が完了しました。使用モデル: %s", model_name)
             return translated_text
 

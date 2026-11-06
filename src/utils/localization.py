@@ -314,6 +314,12 @@ STRINGS = {
 }
 
 
+from .redesign_strings import TEXT as _REDESIGN_TEXT
+for _key, _values in _REDESIGN_TEXT.items():
+    for _language, _value in zip(("ja", "en", "zh", "ko"), _values):
+        STRINGS[_language][_key] = _value
+
+
 def normalize_app_language(language_code: str | None) -> str:
     """Normalize app language code to a supported value."""
     lowered = (language_code or "").strip().lower()
