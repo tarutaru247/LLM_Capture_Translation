@@ -8,6 +8,10 @@
 !build_exe.py
 !main.py
 !requirements.txt
+!requirements-bf16.txt
+!setup_local_runtime.py
+!/tests/
+!/tests/**
 !/docs/
 !/docs/**
 !/src/

@@ -37,6 +37,13 @@ class SettingsManager:
 
     def _default_settings(self) -> Dict[str, Any]:
         return {
+            "local_model": {
+                "backend": "gguf",
+                "gguf_path": r"D:\LocalLLM\models\plamo-3-translate-0.8b-Q4_K_M.gguf",
+                "bf16_path": r"D:\LocalLLM\models\plamo-3-translate-0.8b-bf16",
+                "llama_server_path": "",
+                "python_path": "",
+            },
             "api": {
                 "selected_api": "gemini",
                 "gemini_api_key": "",

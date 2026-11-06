@@ -1,0 +1,5 @@
+# Install a CUDA-enabled torch separately when using an NVIDIA GPU.
+torch>=2.7,<3
+transformers>=4.57,<5
+numba>=0.61
+accelerate>=1
