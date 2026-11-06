@@ -8,12 +8,10 @@ import subprocess
 import threading
 import sys
 import base64
-import time
-import tempfile
 from pathlib import Path
 from ctypes import wintypes
 
-from PyQt5.QtCore import QBuffer, QIODevice, QMimeData, QObject, QRect, QSize, Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import QBuffer, QIODevice, QObject, QRect, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import QIcon, QPixmap
 from PyQt5.QtWidgets import (
     QAction,
@@ -27,8 +25,6 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QStatusBar,
     QTextEdit,
-    QTextBrowser,
-    QDialog,
     QVBoxLayout,
     QHBoxLayout,
     QWidget,
@@ -39,22 +35,18 @@ from ..ui.settings_dialog import SettingsDialog
 from ..utils.localization import get_ui_string
 from ..utils.settings_manager import SettingsManager
 from ..utils.utils import sanitize_sensitive_data
-from ..translator.plamo_runtime import PlamoRuntime, resource_root
 
 logger = logging.getLogger("ocr_translator")
 
 MOD_CONTROL = 0x0002
 MOD_SHIFT = 0x0004
 VK_X = 0x58
-VK_C = 0x43
-MOD_NOREPEAT = 0x4000
 WM_HOTKEY = 0x0312
 
 
 class TranslationResultBridge(QObject):
     """ワーカースレッドからメインスレッドへ結果を返す。"""
     result_ready = pyqtSignal(dict)
-    model_ready = pyqtSignal(str)
 
 
 class ProcessingOverlay(QWidget):
@@ -129,10 +121,6 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.hotkey_id = 1
-        self.selection_hotkey_id = 2
-        self._selection_pending = False
-        self._closing = False
-        self._model_loading = False
         self.settings_manager = SettingsManager()
         self.capture_window = None
         self.captured_pixmap = None
@@ -143,12 +131,9 @@ class MainWindow(QMainWindow):
         self.worker_thread: threading.Thread | None = None
         self.result_bridge = TranslationResultBridge()
         self.result_bridge.result_ready.connect(self._handle_translation_result)
-        self.result_bridge.model_ready.connect(self._handle_model_ready)
-        self.runtime = PlamoRuntime(self.settings_manager)
 
         self._init_ui()
         self._register_global_hotkey()
-        QTimer.singleShot(0, self._load_local_model)
         logger.info("メインウィンドウを初期化しました")
 
     def tr_ui(self, key: str, **kwargs) -> str:
@@ -287,8 +272,6 @@ class MainWindow(QMainWindow):
         self.help_menu.setTitle(self.tr_ui("help_menu"))
         self.about_action.setText(self.tr_ui("about_action"))
         self.usage_action.setText(self.tr_ui("usage_action"))
-        self.licenses_action.setText(self.tr_ui("licenses"))
-        self.reload_model_action.setText(self.tr_ui("reload_model"))
 
     def _update_ui_visibility(self):
         """設定に基づいてUIの表示/非表示を切り替える"""
@@ -308,9 +291,6 @@ class MainWindow(QMainWindow):
         self.settings_action = QAction(QIcon("icons/settings.png"), "", self)
         self.settings_action.triggered.connect(self._show_settings_dialog)
         self.settings_menu.addAction(self.settings_action)
-        self.reload_model_action = QAction("", self)
-        self.reload_model_action.triggered.connect(self._reload_local_model)
-        self.settings_menu.addAction(self.reload_model_action)
 
         self.help_menu = menu_bar.addMenu("")
         self.about_action = QAction(QIcon("icons/info.png"), "", self)
@@ -320,14 +300,9 @@ class MainWindow(QMainWindow):
         self.usage_action = QAction(QIcon("icons/help.png"), "", self)
         self.usage_action.triggered.connect(self._show_usage_dialog)
         self.help_menu.addAction(self.usage_action)
-        self.licenses_action = QAction("", self)
-        self.licenses_action.triggered.connect(self._show_licenses)
-        self.help_menu.addAction(self.licenses_action)
 
     def start_capture(self):
         """領域選択キャプチャを開始する。"""
-        if not self._can_translate():
-            return
         if self.capture_window and self.capture_window.isVisible():
             return
 
@@ -406,27 +381,18 @@ class MainWindow(QMainWindow):
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
         try:
-            # Windowed PyInstaller workers have no sys.stdin/sys.stdout. Use
-            # short-lived files for both source and exe execution instead.
-            with tempfile.TemporaryDirectory(prefix="ocr-job-", dir=self.settings_manager.config_dir) as folder:
-                input_path = Path(folder) / "input.json"
-                output_path = Path(folder) / "output.json"
-                input_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-                completed = subprocess.run(
-                    self._build_translation_subprocess_command() + ["--input-json", str(input_path), "--output-json", str(output_path)],
-                    capture_output=True,
-                    cwd=str(self._get_project_root()),
-                    creationflags=creationflags,
-                    timeout=self.settings_manager.get_timeout() + 30,
-                )
-                result_text = output_path.read_text(encoding="utf-8") if output_path.is_file() else ""
+            completed = subprocess.run(
+                self._build_translation_subprocess_command(),
+                input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                capture_output=True,
+                cwd=str(self._get_project_root()),
+                creationflags=creationflags,
+                timeout=self.settings_manager.get_timeout() + 30,
+            )
             stdout_text = (completed.stdout or b"").decode("utf-8", errors="replace")
             stderr_text = (completed.stderr or b"").decode("utf-8", errors="replace")
             if completed.returncode == 0:
-                result = json.loads(result_text)
-                if not result.get("error_message") and result.get("extracted_text"):
-                    result["translated_text"] = self.runtime.translate(result["extracted_text"], target_lang)
-                    result["last_used_model"] = self.runtime.model_name
+                result = json.loads(stdout_text or "{}")
             else:
                 stderr = (stderr_text or stdout_text).strip()
                 result = {
@@ -439,7 +405,7 @@ class MainWindow(QMainWindow):
             result = {
                 "translated_text": None,
                 "extracted_text": "",
-                "error_message": f"翻訳に失敗しました: {sanitize_sensitive_data(str(exc))}",
+                "error_message": f"翻訳サブプロセスの起動に失敗しました: {exc}",
                 "last_used_model": None,
             }
 
@@ -453,11 +419,10 @@ class MainWindow(QMainWindow):
         self.worker_thread = None
 
     def _set_processing_state(self, is_processing: bool):
-        self.capture_button.setEnabled(not is_processing and self.runtime.ready)
+        self.capture_button.setEnabled(not is_processing)
         self.copy_original_button.setEnabled(not is_processing)
         self.copy_translation_button.setEnabled(not is_processing)
         self.settings_action.setEnabled(not is_processing)
-        self.reload_model_action.setEnabled(not is_processing and not self._model_loading)
         self.exit_action.setEnabled(not is_processing)
         self.progress_label.setVisible(is_processing)
         self.processing_overlay.setVisible(is_processing)
@@ -480,11 +445,9 @@ class MainWindow(QMainWindow):
         error_message = result.get("error_message")
         last_used_model = result.get("last_used_model")
 
-        self.extracted_text = extracted_text
-        self.original_text_edit.setPlainText(extracted_text)
-        self.original_widget.setVisible(True)
-        self.raise_()
-        self.activateWindow()
+        if extracted_text:
+            self.extracted_text = extracted_text
+            self.original_text_edit.setPlainText(extracted_text)
 
         if translated_text and not translated_text.startswith("エラー:"):
             self.translated_text = translated_text
@@ -518,19 +481,12 @@ class MainWindow(QMainWindow):
         return
 
     def _show_settings_dialog(self):
-        if self._selection_pending or self.worker_thread is not None or self._model_loading:
-            return
-        old_local_settings = dict(self.settings_manager.settings["local_model"])
         settings_dialog = SettingsDialog(self)
         if settings_dialog.exec_():
             self.settings_manager.reload_settings()
             self._update_ui_visibility()
             self._apply_texts()
             self.status_bar.showMessage(self.tr_ui("status_settings_saved"), 3000)
-            if old_local_settings != self.settings_manager.settings["local_model"]:
-                self.runtime.close()
-                self.runtime = PlamoRuntime(self.settings_manager)
-                self._load_local_model()
 
     def _show_about_dialog(self):
         QMessageBox.about(self, self.tr_ui("about_title"), self.tr_ui("about_text"))
@@ -538,26 +494,16 @@ class MainWindow(QMainWindow):
     def _show_usage_dialog(self):
         QMessageBox.information(self, self.tr_ui("usage_title"), self.tr_ui("usage_text"))
 
-    def _show_licenses(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr_ui("licenses"))
-        dialog.resize(760, 600)
-        layout = QVBoxLayout(dialog)
-        browser = QTextBrowser()
-        notice = resource_root() / "docs/THIRD_PARTY_NOTICES.md"
-        license_path = resource_root() / "docs/licenses/PLaMo-ja.txt"
-        browser.setPlainText(notice.read_text(encoding="utf-8") + "\n\n" + license_path.read_text(encoding="utf-8"))
-        layout.addWidget(browser)
-        dialog.exec_()
-
     def _register_global_hotkey(self):
         try:
             user32 = ctypes.windll.user32
             hwnd = self.winId()
-            for hotkey_id, key in ((self.hotkey_id, VK_X), (self.selection_hotkey_id, VK_C)):
-                if not user32.RegisterHotKey(wintypes.HWND(int(hwnd)), hotkey_id, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, key):
-                    self.status_bar.showMessage(self.tr_ui("hotkey_failed", shortcut=chr(key)))
-                    logger.error("ホットキー登録失敗: Ctrl+Shift+%s", chr(key))
+            if not user32.RegisterHotKey(wintypes.HWND(int(hwnd)), self.hotkey_id, MOD_CONTROL | MOD_SHIFT, VK_X):
+                error_code = ctypes.GetLastError()
+                logger.error("グローバルホットキーの登録に失敗しました。エラーコード: %s", error_code)
+                self.status_bar.showMessage(f"{self.tr_ui('error_title')}: hotkey")
+            else:
+                logger.info("グローバルホットキー(Ctrl+Shift+X)を登録しました。")
         except Exception as e:
             logger.error("ホットキー登録中に予期せぬエラーが発生しました: %s", e)
             self.status_bar.showMessage(f"{self.tr_ui('error_title')}: hotkey")
@@ -567,7 +513,6 @@ class MainWindow(QMainWindow):
             user32 = ctypes.windll.user32
             hwnd = self.winId()
             user32.UnregisterHotKey(wintypes.HWND(int(hwnd)), self.hotkey_id)
-            user32.UnregisterHotKey(wintypes.HWND(int(hwnd)), self.selection_hotkey_id)
             logger.info("グローバルホットキーを解除しました。")
         except Exception as e:
             logger.error("ホットキー解除中にエラーが発生しました: %s", e)
@@ -575,15 +520,12 @@ class MainWindow(QMainWindow):
     def nativeEvent(self, eventType, message):
         if eventType == b"windows_generic_MSG":
             msg = wintypes.MSG.from_address(message.__int__())
-            if msg.message == WM_HOTKEY and msg.wParam in (self.hotkey_id, self.selection_hotkey_id):
-                if self.worker_thread is not None or self._selection_pending or self._model_loading or QApplication.activeModalWidget() is not None:
+            if msg.message == WM_HOTKEY and msg.wParam == self.hotkey_id:
+                if self.worker_thread is not None:
                     logger.info("翻訳処理中のためホットキー入力を無視しました。")
                     return True, 0
                 logger.info("グローバルホットキーが検出されました。")
-                if msg.wParam == self.selection_hotkey_id:
-                    self.translate_selection()
-                else:
-                    self.start_capture()
+                self.start_capture()
                 return True, 0
         return super().nativeEvent(eventType, message)
 
@@ -597,136 +539,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self._unregister_global_hotkey()
-        self._closing = True
-        self.runtime.close()
         self.settings_manager.reload_settings()
         self.settings_manager.save_settings()
         logger.info("アプリケーションを終了します。")
         event.accept()
-        QApplication.instance().quit()
-
-    def _load_local_model(self):
-        self._model_loading = True
-        self.capture_button.setEnabled(False)
-        self.settings_action.setEnabled(False)
-        self.reload_model_action.setEnabled(False)
-        self.status_bar.showMessage(self.tr_ui("model_loading"))
-        runtime = self.runtime
-
-        def load():
-            error = ""
-            try:
-                runtime.start()
-            except Exception as exc:
-                runtime.close()
-                error = sanitize_sensitive_data(str(exc))
-            if not self._closing:
-                self.result_bridge.model_ready.emit(error)
-
-        threading.Thread(target=load, name="plamo-loader", daemon=True).start()
-
-    def _handle_model_ready(self, error):
-        if self._closing:
-            return
-        self._model_loading = False
-        self.settings_action.setEnabled(True)
-        self.reload_model_action.setEnabled(True)
-        self.capture_button.setEnabled(not error)
-        self.status_bar.showMessage(self.tr_ui("model_failed", detail=error) if error else self.tr_ui("status_ready"))
-        if error:
-            self.translation_text_edit.setPlainText(self.tr_ui("model_failed", detail=error))
-
-    def _can_translate(self):
-        if self.worker_thread is not None or self._selection_pending or QApplication.activeModalWidget() is not None:
-            return False
-        if not self.runtime.ready:
-            self.status_bar.showMessage(self.tr_ui("model_not_ready"), 5000)
-            return False
-        return True
-
-    def _reload_local_model(self):
-        if self.worker_thread is not None or self._selection_pending or self._model_loading:
-            return
-        self.runtime.close()
-        self.runtime = PlamoRuntime(self.settings_manager)
-        self._load_local_model()
-
-    def translate_selection(self):
-        """Copy the selection in the foreground app, then restore clipboard contents."""
-        if not self._can_translate():
-            return
-        self._selection_pending = True
-        self._selection_deadline = time.monotonic() + 3
-        self._selection_foreground = ctypes.windll.user32.GetForegroundWindow()
-        self._wait_for_hotkey_release()
-
-    def _wait_for_hotkey_release(self):
-        if self._closing:
-            return
-        user32 = ctypes.windll.user32
-        if user32.GetForegroundWindow() != self._selection_foreground:
-            self._selection_pending = False
-            return
-        if any(user32.GetAsyncKeyState(key) & 0x8000 for key in (0x10, 0x11, 0x12, VK_C)):
-            if time.monotonic() < self._selection_deadline:
-                QTimer.singleShot(30, self._wait_for_hotkey_release)
-            else:
-                self._selection_pending = False
-            return
-        clipboard = QApplication.clipboard()
-        saved = QMimeData()
-        for fmt in clipboard.mimeData().formats():
-            saved.setData(fmt, clipboard.mimeData().data(fmt))
-        self._saved_clipboard = saved
-        self._clipboard_sequence = user32.GetClipboardSequenceNumber()
-        # Key releases above prevent Ctrl+Shift+C becoming Ctrl+Shift+Insert, etc.
-        from pynput.keyboard import Controller, Key
-        keyboard = Controller()
-        try:
-            with keyboard.pressed(Key.ctrl):
-                keyboard.press("c")
-                keyboard.release("c")
-        except Exception:
-            self._selection_pending = False
-            self._saved_clipboard = None
-            self.status_bar.showMessage(self.tr_ui("selection_empty"), 5000)
-            return
-        self._selection_deadline = time.monotonic() + 2
-        QTimer.singleShot(50, self._read_selection)
-
-    def _read_selection(self):
-        if self._closing:
-            return
-        user32 = ctypes.windll.user32
-        sequence = user32.GetClipboardSequenceNumber()
-        if sequence == self._clipboard_sequence:
-            if time.monotonic() < self._selection_deadline:
-                QTimer.singleShot(50, self._read_selection)
-                return
-            self._selection_pending = False
-            self._saved_clipboard = None
-            self.status_bar.showMessage(self.tr_ui("selection_empty"), 5000)
-            return
-        clipboard = QApplication.clipboard()
-        text = clipboard.text()
-        # Never replace a subsequent clipboard change made by another app/user.
-        if user32.GetClipboardSequenceNumber() == sequence:
-            clipboard.setMimeData(self._saved_clipboard)
-        self._saved_clipboard = None
-        self._selection_pending = False
-        if not text.strip():
-            self.status_bar.showMessage(self.tr_ui("selection_empty"), 5000)
-            return
-        self._set_processing_state(True)
-        target_lang = self.settings_manager.get_app_language()
-
-        def translate():
-            result = {"extracted_text": text, "last_used_model": self.runtime.model_name}
-            try:
-                result["translated_text"] = self.runtime.translate(text, target_lang)
-            except Exception as exc:
-                result["error_message"] = sanitize_sensitive_data(str(exc))
-            self.result_bridge.result_ready.emit(result)
-
-        self.worker_thread = threading.Thread(target=translate, name="selection-translator", daemon=True)
-        self.worker_thread.start()

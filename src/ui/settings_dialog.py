@@ -8,7 +8,6 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QDialog,
     QFormLayout,
-    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -110,32 +109,6 @@ class SettingsDialog(QDialog):
         language_form.addRow(self.app_language_label, self.app_language_combo)
         main_layout.addWidget(self.language_group)
 
-        self.local_group = QGroupBox()
-        local_form = QFormLayout(self.local_group)
-        self.backend_combo = QComboBox()
-        self.backend_combo.addItem("GGUF (Q4_K_M / llama.cpp)", "gguf")
-        self.backend_combo.addItem("BF16 (Transformers)", "bf16")
-        self.backend_label = QLabel()
-        local_form.addRow(self.backend_label, self.backend_combo)
-        self.local_edits = {}
-        self.local_labels = {}
-        for key in ("gguf_path", "bf16_path", "llama_server_path", "python_path"):
-            label = QLabel()
-            edit = QLineEdit()
-            browse = QPushButton("…")
-            browse.setMaximumWidth(45)
-            browse.clicked.connect(lambda checked=False, field=key: self._browse_local_path(field))
-            row = QHBoxLayout()
-            row.addWidget(edit)
-            row.addWidget(browse)
-            local_form.addRow(label, row)
-            self.local_labels[key] = label
-            self.local_edits[key] = edit
-        self.local_note = QLabel()
-        self.local_note.setWordWrap(True)
-        local_form.addRow(self.local_note)
-        main_layout.addWidget(self.local_group)
-
         api_container = QWidget()
         api_layout = QVBoxLayout(api_container)
 
@@ -204,11 +177,6 @@ class SettingsDialog(QDialog):
         """現在のアプリ言語に合わせて文言を反映"""
         self.setWindowTitle(self.tr_ui("settings_dialog_title"))
         self.app_language_label.setText(self.tr_ui("app_language"))
-        self.local_group.setTitle(self.tr_ui("local_group"))
-        self.backend_label.setText(self.tr_ui("local_backend"))
-        for key, label in self.local_labels.items():
-            label.setText(self.tr_ui(key))
-        self.local_note.setText(self.tr_ui("local_note"))
 
         self.language_group.setTitle(self.tr_ui("settings_language_group"))
         self.api_group.setTitle(self.tr_ui("settings_api_group"))
@@ -243,10 +211,6 @@ class SettingsDialog(QDialog):
         custom_model = self.settings_manager.get_custom_model()
         timeout = self.settings_manager.get_timeout()
         app_language = self.settings_manager.get_app_language()
-        index = self.backend_combo.findData(self.settings_manager.get_setting("local_model", "backend"))
-        self.backend_combo.setCurrentIndex(max(0, index))
-        for key, edit in self.local_edits.items():
-            edit.setText(self.settings_manager.get_setting("local_model", key, ""))
 
         self.gemini_api_key_edit.setText(gemini_api_key if gemini_api_key else "")
         self.custom_model_edit.setText(custom_model)
@@ -281,12 +245,6 @@ class SettingsDialog(QDialog):
             custom_model = self.custom_model_edit.text().strip()
             timeout = int(self.timeout_edit.text()) if self.timeout_edit.text().isdigit() else 60
             app_language = self.app_language_combo.currentData()
-            backend = self.backend_combo.currentData()
-            from pathlib import Path
-            model_path = Path(self.local_edits[backend + "_path"].text().strip())
-            if not self.local_edits[backend + "_path"].text().strip() or (backend == "gguf" and not model_path.is_file()) or (backend == "bf16" and not (model_path / "config.json").is_file()):
-                QMessageBox.warning(self, self.tr_ui("validation_title"), self.tr_ui("invalid_model_path"))
-                return
 
             if llm_mode == "custom" and not custom_model:
                 QMessageBox.warning(self, self.tr_ui("validation_title"), self.tr_ui("validation_custom_model"))
@@ -298,9 +256,6 @@ class SettingsDialog(QDialog):
             self.settings_manager.set_timeout(timeout)
             self.settings_manager.set_app_language(app_language)
             self.settings_manager.set_selected_api("gemini")
-            self.settings_manager.set_setting("local_model", "backend", backend)
-            for key, edit in self.local_edits.items():
-                self.settings_manager.set_setting("local_model", key, edit.text().strip())
 
             if self.settings_manager.save_settings():
                 logger.info("設定を保存しました")
@@ -334,11 +289,3 @@ class SettingsDialog(QDialog):
                 self.tr_ui("verify_ok_title"),
                 self.tr_ui("verify_ng_message", message=message),
             )
-
-    def _browse_local_path(self, key):
-        if key == "bf16_path":
-            path = QFileDialog.getExistingDirectory(self, self.tr_ui(key))
-        else:
-            path, _ = QFileDialog.getOpenFileName(self, self.tr_ui(key))
-        if path:
-            self.local_edits[key].setText(path)
