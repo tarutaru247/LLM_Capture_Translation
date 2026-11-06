@@ -9,6 +9,8 @@ import subprocess
 def create_executable():
     """PyInstallerを使用して実行ファイルを作成する"""
     print("PyInstallerを使用して実行ファイルを作成します...")
+    if not os.path.isfile("runtime/llama/llama-server.exe"):
+        raise RuntimeError("先に python setup_local_runtime.py でローカル実行ランタイムを取得してください。")
     
     # ビルドディレクトリと配布ディレクトリをクリーンアップ
     # ロックされている場合はスキップし、新しい dist/build パスを使う
@@ -64,6 +66,15 @@ def create_executable():
         f"--workpath={build_dir}",
         "--windowed",  # GUIアプリケーション
         "--onefile",   # 単一の実行ファイル
+        "--add-data=docs/THIRD_PARTY_NOTICES.md;docs",
+        "--add-data=docs/licenses;docs/licenses",
+        "--add-data=src/translator/bf16_server.py;src/translator",
+        "--add-binary=runtime/llama/*.dll;runtime/llama",
+        "--add-binary=runtime/llama/llama-server.exe;runtime/llama",
+        "--add-data=runtime/llama/LICENSE-LLVM-OpenMP;runtime/llama",
+        "--exclude-module=torch",
+        "--exclude-module=transformers",
+        "--exclude-module=numba",
         "--add-data=src/prompts/vision_translation_prompt.md;src/prompts",
         "--icon=resources/icon.ico",  # アイコン（存在する場合）
         "main.py"
@@ -75,7 +86,7 @@ def create_executable():
     
     # PyInstallerを実行
     print("実行ファイルをビルドしています...")
-    subprocess.call(pyinstaller_cmd)
+    subprocess.run(pyinstaller_cmd, check=True)
     
     print("ビルドが完了しました。")
     print("実行ファイルは 'dist' フォルダ内に作成されました。")
