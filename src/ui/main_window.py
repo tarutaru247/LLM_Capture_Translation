@@ -15,12 +15,12 @@ from PyQt5.QtCore import QBuffer, QIODevice, QMimeData, QObject, Qt, QTimer, QSi
 from PyQt5.QtGui import QFont, QPixmap, QTextBlockFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QAction, QApplication, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar,
+    QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar, QDialog,
     QPushButton, QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
 from .screen_capture import ScreenCaptureWindow
 from .settings_dialog import SettingsDialog, parse_shortcut
-from .theme import icon, stylesheet
+from .theme import icon, stylesheet, is_dark, apply_palette, native_title_bar
 from ..translator.plamo_runtime import PlamoRuntime
 from ..utils.history_store import HistoryStore
 from ..utils.localization import SUPPORTED_APP_LANGUAGES, get_language_name, get_ui_string
@@ -58,7 +58,14 @@ class MainWindow(QMainWindow):
         self._active_job = None
         self.extracted_text = ""
         self.translated_text = ""
+        self._dark_theme = None
+        self._applying_theme = False
         self._init_ui()
+        self.theme_timer = QTimer(self)
+        self.theme_timer.setInterval(1000)
+        self.theme_timer.timeout.connect(self._sync_system_theme)
+        self.theme_timer.start()
+        QApplication.instance().paletteChanged.connect(self._sync_system_theme)
         self._register_global_hotkey()
         self._load_history()
         QTimer.singleShot(0, self._load_local_model)
@@ -219,9 +226,34 @@ class MainWindow(QMainWindow):
         self._set_busy(False)
 
     def _apply_theme(self):
+        if self._applying_theme:
+            return
         theme = self.settings_manager.get_setting("ui", "theme", "system")
-        dark = theme == "dark" or (theme == "system" and QApplication.palette().window().color().lightness() < 128)
-        self.setStyleSheet(stylesheet(dark))
+        dark = is_dark(theme)
+        if self._dark_theme == dark:
+            return
+        self._applying_theme = True
+        try:
+            self._dark_theme = dark
+            self.setStyleSheet(stylesheet(dark))
+            apply_palette(self, dark)
+            native_title_bar(self, dark)
+            for button, glyph in ((self.new_button,"plus"),(self.settings_button,"settings"),
+                                  (self.capture_button,"capture"),(self.sidebar_button,"sidebar"),
+                                  (self.copy_original_button,"copy"),(self.copy_translation_button,"copy")):
+                color = "#123b20" if button is self.capture_button else "#9adaac" if dark else "#477354"
+                button.setIcon(icon(glyph, color))
+            self.history_search.actions()[0].setIcon(icon("search", "#9adaac" if dark else "#477354"))
+            for dialog in self.findChildren(QDialog):
+                dialog.setStyleSheet(self.styleSheet())
+                apply_palette(dialog, dark)
+                native_title_bar(dialog, dark)
+        finally:
+            self._applying_theme = False
+
+    def _sync_system_theme(self, *_):
+        if not self._closing and self.settings_manager.get_setting("ui", "theme", "system") == "system":
+            self._apply_theme()
 
     def _apply_texts(self):
         for button, key in ((self.new_button,"new_translation"), (self.settings_button,"settings"),
@@ -551,6 +583,8 @@ class MainWindow(QMainWindow):
     def nativeEvent(self,event_type,message):
         if event_type == b"windows_generic_MSG":
             msg = wintypes.MSG.from_address(int(message))
+            if msg.message in (0x001A, 0x031A):  # WM_SETTINGCHANGE / WM_THEMECHANGED
+                QTimer.singleShot(0, self._sync_system_theme)
             if msg.message == WM_HOTKEY and msg.wParam in (1,2):
                 self.translate_selection() if msg.wParam == 2 else self.start_capture()
                 return True,0

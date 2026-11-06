@@ -1,15 +1,84 @@
 """Shared green-accented native UI styles."""
-from PyQt5.QtGui import QIcon, QPainter, QPen, QPixmap, QColor
+import sys
+from PyQt5.QtGui import QIcon, QPainter, QPen, QPixmap, QColor, QPalette
 from PyQt5.QtCore import Qt, QRectF
+
+
+def system_is_dark():
+    """Qt 5's Windows palette does not reliably reflect the app theme setting."""
+    if sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return value == 0
+        except OSError:
+            pass
+    from PyQt5.QtWidgets import QApplication
+    return QApplication.palette().window().color().lightness() < 128
+
+
+def is_dark(theme="system"):
+    return theme == "dark" or (theme == "system" and system_is_dark())
+
+
+def palette(dark=False):
+    result = QPalette()
+    for role, light, dim in (
+        (QPalette.Window, "#ffffff", "#181c1a"),
+        (QPalette.WindowText, "#202b24", "#eff5f0"),
+        (QPalette.Base, "#ffffff", "#252e28"),
+        (QPalette.AlternateBase, "#f6f8f7", "#1e2420"),
+        (QPalette.Text, "#202b24", "#eff5f0"),
+        (QPalette.Button, "#f6f8f7", "#252e28"),
+        (QPalette.ButtonText, "#202b24", "#eff5f0"),
+        (QPalette.Highlight, "#d9f5e2", "#294e35"),
+        (QPalette.HighlightedText, "#173e23", "#d3f6de"),
+        (QPalette.PlaceholderText, "#6e7b72", "#a0b0a5"),
+        (QPalette.ToolTipBase, "#f6f8f7", "#252e28"),
+        (QPalette.ToolTipText, "#202b24", "#eff5f0"),
+    ):
+        result.setColor(role, QColor(dim if dark else light))
+    for role in (QPalette.Text, QPalette.WindowText, QPalette.ButtonText):
+        result.setColor(QPalette.Disabled, role, QColor("#819086" if dark else "#89958d"))
+    return result
+
+
+def apply_palette(window, dark):
+    # Qt 5 input widgets may retain their own placeholder/disabled palette.
+    from PyQt5.QtWidgets import QWidget
+    colors = palette(dark)
+    window.setPalette(colors)
+    for child in window.findChildren(QWidget):
+        child.setPalette(colors)
+
+
+def native_title_bar(window, dark):
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        enabled = wintypes.BOOL(dark)
+        for attribute in (20, 19):
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    wintypes.HWND(int(window.winId())), attribute,
+                    ctypes.byref(enabled), ctypes.sizeof(enabled)) == 0:
+                break
+    except (AttributeError, OSError):
+        pass
 
 
 def stylesheet(dark=False):
     bg, panel, side, text, muted, line, input_bg = (
         ("#181c1a", "#1e2420", "#141916", "#eff5f0", "#a0b0a5", "#354139", "#252e28") if dark else
         ("#ffffff", "#f6f8f7", "#f3f5f4", "#202b24", "#6e7b72", "#e0e6e2", "#ffffff"))
+    selected, selected_text = (
+        ("#294e35", "#d3f6de") if dark else ("#d9f5e2", "#173e23"))
     return f"""
     QWidget {{ color:{text}; font-family:'Segoe UI','Yu Gothic UI','Meiryo'; font-size:14px; }}
-    QMainWindow, QDialog, QWidget#workspace, QWidget#settingsContent {{ background:{bg}; }}
+    QMainWindow, QDialog, QMessageBox, QWidget#workspace, QWidget#settingsContent {{ background:{bg}; }}
     QWidget#sidebar, QListWidget#settingsNav {{ background:{side}; border:0; }}
     QWidget#originalPanel, QFrame#statusPanel {{ background:{panel}; border-radius:12px; }}
     QLabel {{ background:transparent; }}
@@ -26,23 +95,23 @@ def stylesheet(dark=False):
     QPushButton#primary:disabled {{ background:{line}; color:{muted}; border-color:{line}; }}
     QPushButton#ghost {{ border:0; padding:8px 10px; text-align:left; }}
     QPushButton#providerChoice {{ text-align:left; font-size:16px; font-weight:600; }}
-    QPushButton#providerChoice:checked {{ background:#d9f5e2; border-color:#54c97a; color:#173e23; }}
-    QPushButton#danger {{ color:#c24444; }}
+    QPushButton#providerChoice:checked {{ background:{selected}; border-color:#54c97a; color:{selected_text}; }}
+    QPushButton#danger {{ color:{'#ff9696' if dark else '#c24444'}; }}
     QLineEdit, QComboBox, QSpinBox, QKeySequenceEdit {{ background:{input_bg}; border:1px solid {line}; border-radius:8px; padding:9px 10px; selection-background-color:#bceccb; selection-color:#143e22; }}
     QLineEdit:focus, QComboBox:focus, QKeySequenceEdit:focus {{ border-color:#50ba72; }}
     QComboBox::drop-down {{ border:0; width:24px; }}
-    QComboBox QAbstractItemView {{ background:{input_bg}; selection-background-color:#d9f5e2; selection-color:#123b20; }}
+    QComboBox QAbstractItemView {{ background:{input_bg}; color:{text}; selection-background-color:{selected}; selection-color:{selected_text}; }}
     QTextEdit, QTextBrowser {{ background:transparent; border:0; selection-background-color:#bceccb; selection-color:#143e22; }}
     QTextEdit#translation {{ font-size:22px; }}
     QTextEdit#original {{ font-size:15px; }}
     QListWidget {{ background:transparent; border:0; outline:0; }}
     QListWidget::item {{ border-radius:9px; padding:9px 10px; margin:2px 8px; }}
     QListWidget::item:hover {{ background:{line}; }}
-    QListWidget::item:selected {{ background:#d9f5e2; color:#173e23; }}
+    QListWidget::item:selected {{ background:{selected}; color:{selected_text}; }}
     QListWidget#settingsNav::item {{ padding:14px 14px; margin:3px 12px; }}
     QScrollArea {{ background:transparent; border:0; }}
     QScrollBar:vertical {{ background:transparent; width:8px; margin:3px; }}
-    QScrollBar::handle:vertical {{ background:#bdc9c1; border-radius:3px; min-height:28px; }}
+    QScrollBar::handle:vertical {{ background:{'#53645a' if dark else '#bdc9c1'}; border-radius:3px; min-height:28px; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
     QSplitter::handle {{ background:{line}; height:1px; width:1px; }}
     QFrame#divider {{ background:{line}; max-height:1px; min-height:1px; border:0; }}
@@ -54,7 +123,7 @@ def stylesheet(dark=False):
     QToolTip {{ background:{panel}; color:{text}; border:1px solid {line}; padding:5px; }}
     QMenu {{ background:{bg}; border:1px solid {line}; padding:5px; }}
     QMenu::item {{ padding:8px 20px; }}
-    QMenu::item:selected {{ background:#d9f5e2; color:#173e23; }}
+    QMenu::item:selected {{ background:{selected}; color:{selected_text}; }}
     """
 
 

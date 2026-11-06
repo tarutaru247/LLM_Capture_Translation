@@ -16,6 +16,7 @@ from ..utils.localization import SUPPORTED_APP_LANGUAGES, get_language_name, get
 from ..utils.model_catalog import MODELS, download_model
 from ..utils.settings_manager import SettingsManager
 from ..translator.plamo_runtime import resource_root
+from .theme import is_dark, apply_palette, native_title_bar
 
 
 def parse_shortcut(sequence):
@@ -48,6 +49,8 @@ class SettingsDialog(QDialog):
         self.resize(900, 700)
         self.setMinimumSize(760, 540)
         self.setStyleSheet(parent.styleSheet() if parent else self._default_style())
+        dark = is_dark(self.settings_manager.get_setting("ui", "theme", "system"))
+        native_title_bar(self, dark)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -83,10 +86,11 @@ class SettingsDialog(QDialog):
         outer.addWidget(footer)
         self.nav.setCurrentRow(0)
         self._load_settings()
+        apply_palette(self, dark)
 
     def _default_style(self):
         from .theme import stylesheet
-        return stylesheet()
+        return stylesheet(is_dark(self.settings_manager.get_setting("ui", "theme", "system")))
 
     def tr_ui(self, key, **kwargs):
         return get_ui_string(self.app_language, key, **kwargs)
