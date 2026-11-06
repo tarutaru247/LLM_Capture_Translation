@@ -1,0 +1,82 @@
+[
+  {
+    "id": "EN01", "language": "英語", "topic": "案内・日程変更",
+    "source": "The workshop has been moved from Friday morning to Monday afternoon because the meeting room is being repaired. If you have already registered, you do not need to sign up again. We will send the new starting time by email tomorrow.",
+    "checkpoints": "金曜午前から月曜午後への変更／理由は会議室の修理／登録済みなら再登録不要／新しい開始時刻は明日メールで案内"
+  },
+  {
+    "id": "EN02", "language": "英語", "topic": "数字・割引・送料",
+    "source": "Each notebook costs $12. A 15% discount applies only when you buy five or more, and shipping costs $8 per order. Maya bought four notebooks, so her total was $56, not $48. The discount does not apply to her order.",
+    "checkpoints": "単価12ドル／5冊以上のみ15%引き／送料は注文ごと8ドル／4冊の合計56ドル、48ドルではない／割引対象外"
+  },
+  {
+    "id": "EN03", "language": "英語", "topic": "否定・例外・条件",
+    "source": "Do not delete the backup unless the new file has been opened successfully on another computer. Even if the upload finishes, that alone does not mean the file is safe to remove. Keep at least one local copy until the recipient confirms that everything is readable.",
+    "checkpoints": "別のPCで新ファイルを正常に開くまではバックアップ削除禁止／アップロード完了だけでは削除可とはならない／受信者が全内容を読めると確認するまでローカルコピーを1つ以上保持"
+  },
+  {
+    "id": "EN04", "language": "英語", "topic": "人物・役割・指示対象",
+    "source": "Lena lent her camera to her brother, but he returned it to their mother instead of giving it back to Lena. Their mother has not used it; she is keeping it in a drawer until Lena comes home. The brother, not the mother, damaged the lens cap.",
+    "checkpoints": "レナが兄弟にカメラを貸した／兄弟はレナではなく母に返した／母は未使用でレナの帰宅まで引き出しに保管／キャップを壊したのは母ではなく兄弟。brotherは原文だけでは兄か弟か不明"
+  },
+  {
+    "id": "EN05", "language": "英語", "topic": "ソフトウェア・保存と同期",
+    "source": "Saving a document locally and syncing it to the server are separate operations. If the connection drops, your edits can still be saved on this device, but other team members will not see them until syncing resumes. Signing out does not delete the local file. To avoid uploading unfinished work, pause syncing before reconnecting.",
+    "checkpoints": "ローカル保存とサーバー同期は別／切断中も端末へ保存可能／同期再開まで他メンバーには見えない／サインアウトでローカルファイルは消えない／未完成内容のアップロード回避には再接続前に同期一時停止"
+  },
+  {
+    "id": "EN06", "language": "英語", "topic": "口語・皮肉・慣用表現",
+    "source": "'Great, another meeting that could have been an email,' Ben muttered. He wasn't actually pleased. Still, he decided to give the new manager the benefit of the doubt and hear her out before jumping to conclusions.",
+    "checkpoints": "Greatは喜びではなく皮肉／メールで済む会議への不満／新任の女性マネジャーをすぐに悪く判断せず、最後まで話を聞く／物理的な跳躍や金銭の給付ではない"
+  },
+  {
+    "id": "EN07", "language": "英語", "topic": "反実仮想・責任の区別",
+    "source": "If the warning had arrived ten minutes earlier, we could have stopped the shipment. By the time it reached us, however, the truck had already left. That does not prove the driver ignored the warning; he may never have received it.",
+    "checkpoints": "警告が10分早ければ発送を止められたという実現しなかった仮定／到着時にはトラック出発済み／運転手の警告無視の証拠ではない／運転手が受け取っていない可能性"
+  },
+  {
+    "id": "EN08", "language": "英語", "topic": "長文・複数の制約・試験運用",
+    "source": "Our library is testing a self-service pickup shelf for reserved books. During the trial, readers may collect books between 7 a.m. and 10 p.m., even when the main desk is closed. The shelf is inside the entrance, so a library card is still required to enter after normal opening hours.\n\nPlease remember that a reservation confirmation is not a pickup notice. Wait until you receive a message saying that your books are ready. Books will be held for three calendar days, including weekends. If you cannot come in time, contact us before the deadline; an extension is possible, but it is not automatic.\n\nReturning books to the pickup shelf will not complete a return. Use the return slot beside the entrance instead. We will decide whether to continue the service after reviewing feedback at the end of the trial, so the current schedule should not be treated as a permanent change.",
+    "checkpoints": "予約本の受取棚の試験運用／7～22時、通常時間外の入館には図書館カード／予約確認と受取準備完了通知は別／保管3暦日で週末含む／期限前連絡で延長の可能性はあるが自動ではない／棚へ置いても返却扱いにならず入口横の返却口へ／継続未定で恒久変更ではない"
+  },
+  {
+    "id": "ZH01", "language": "中国語（簡体字）", "topic": "案内・日程変更",
+    "source": "原定周六上午举行的社区读书会，因场地临时维修，改到周日下午三点开始。已经报名的居民不用重新登记。如果你无法参加，请在周五晚上八点前通知工作人员，以便把名额留给候补者。",
+    "checkpoints": "土曜午前予定の地域読書会を会場の急な修理で日曜15時へ変更／登録済み住民の再登録不要／欠席者は金曜20時までに係へ連絡／待機者へ枠を回す目的"
+  },
+  {
+    "id": "ZH02", "language": "中国語（簡体字）", "topic": "数字・折引・数量限定",
+    "source": "这家店的咖啡豆每袋八十元，买两袋时第二袋打八折，并不是两袋都打八折。小林买了两袋，一共付了一百四十四元。运费另收十元，只有商品金额满两百元才免运费。",
+    "checkpoints": "1袋80元／2袋買うと2袋目だけ20%引き、両方20%引きではない／商品合計144元／送料10元は別／商品金額200元以上でのみ送料無料。送料込みなら154元だが原文に総額154とは書かれていない"
+  },
+  {
+    "id": "ZH03", "language": "中国語（簡体字）", "topic": "否定・必要条件と十分条件",
+    "source": "不是提交了申请就一定能参加面试。只有通过材料审核的人，才会收到面试邀请。即使这次没有通过，也不代表以后不能再申请；不过，在收到结果之前，请不要重复提交同一份申请。",
+    "checkpoints": "申請提出だけで面接確約ではない／書類審査合格者のみ面接招待／今回不合格でも将来の再申請不可とは限らない／結果前は同一申請を重複提出しない"
+  },
+  {
+    "id": "ZH04", "language": "中国語（簡体字）", "topic": "人物・把構文・被構文",
+    "source": "小陈把同事借给他的充电器放进了自己的包里，结果下班后才发现拿错了包。不是充电器被人拿走了，而是他的包还留在办公室。第二天，他先把充电器还给同事，再去找拿错的那个包的主人道歉。",
+    "checkpoints": "同僚から借りた充電器を小陳が自分の鞄へ入れた／退勤後に別の鞄を持ってきたと気づく／充電器盗難ではなく自分の鞄が職場に残っている／翌日は同僚へ返却後、取り違えた鞄の持ち主へ謝罪"
+  },
+  {
+    "id": "ZH05", "language": "中国語（簡体字）", "topic": "ソフトウェア・オフラインと反映",
+    "source": "开启离线模式后，应用会优先读取本地缓存，但这并不意味着所有功能都能断网使用。尚未下载的图片仍然需要联网加载。清除缓存不会删除你手动保存的笔记，不过，下次打开页面时可能需要重新下载图片。",
+    "checkpoints": "オフラインモードではローカルキャッシュ優先／全機能を切断状態で利用できるとは限らない／未取得画像は通信必要／キャッシュ削除でも手動保存メモは消えない／次回ページで画像再取得の可能性"
+  },
+  {
+    "id": "ZH06", "language": "中国語（簡体字）", "topic": "慣用句・遠回しな不満",
+    "source": "大家都说这个方案是“纸上谈兵”，可负责人觉得，不先做个小规模试验，谁也不能断言它行不通。他嘴上说“没关系，慢慢来”，其实已经等得有点着急了，只是不想让新人觉得自己在催促。",
+    "checkpoints": "周囲は机上の空論と批判／責任者は小規模試験前には不可能と断言できないと考える／大丈夫ゆっくりと言いつつ実際は待ちくたびれて焦る／新人に催促と感じさせたくない"
+  },
+  {
+    "id": "ZH07", "language": "中国語（繁体字）", "topic": "繁体字・否定・取り置き",
+    "source": "這本書目前沒有現貨，但不代表已經絕版。如果你願意等，我們可以先替你登記，到貨後再通知你付款。登記本身不收費，也不保證一定能調到書；若你已經在別家買到，請告訴我們取消登記即可。",
+    "checkpoints": "現在在庫なしだが絶版とは限らない／希望者を登録し入荷後に支払案内／登録無料／取り寄せ成功の保証はない／他店で買えたら登録取消の連絡だけでよい"
+  },
+  {
+    "id": "ZH08", "language": "中国語（簡体字）", "topic": "長文・通知設定・共有と公開",
+    "source": "为了减少不必要的打扰，团队准备调整项目通知的默认设置。新加入的成员只会收到直接提到自己、分配给自己或即将到期的任务通知，不会自动收到每一次评论更新。现有成员的设置不会被覆盖，仍可在个人设置中选择接收全部通知。\n\n这里的“静音”只是停止推送提醒，并不会把你移出项目，也不会让别人看不到你的评论。如果你担心错过重要消息，可以先试用一周，再决定是否保留新设置。管理员无法替成员开启手机系统中已经关闭的通知权限，因此，即使应用内设置正确，手机也不一定会弹出提醒。\n\n另外，把项目链接发给同事，并不等于把项目设为公开。对方仍需获得访问权限才能查看内容。请不要为了省去一次授权，就把包含内部资料的项目改成所有人可见。我们希望让协作更方便，但便利不应以失去对信息访问范围的控制为代价。",
+    "checkpoints": "新規メンバーの既定通知を本人への言及・担当・期限近いタスクに限定、全コメント通知なし／既存設定は上書きしない／ミュートはプッシュ停止だけで脱退やコメント非表示ではない／1週試用／管理者はOSで無効の通知権限を代わりに有効化できない／アプリ設定正常でも通知表示は確約されない／リンク共有だけでは公開にならず権限必要／承認省略のため内部情報を全公開にしない"
+  }
+]
