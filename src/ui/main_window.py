@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
 
     def _label(self, text="", role=""):
         label = QLabel(text)
+        label.setTextFormat(Qt.PlainText)
         if role:
             label.setObjectName(role)
         return label
@@ -274,6 +275,8 @@ class MainWindow(QMainWindow):
         provider = self.settings_manager.get_translation_provider()
         cloud = provider in PROVIDERS
         self.mode_label.setText('☁  クラウド翻訳 · 外部へ送信' if cloud else '●  ローカル翻訳 · このPCで処理')
+        if provider == 'local_api':
+            self.mode_label.setText('●  ローカルAPI接続 · このPCのサーバー')
         self.mode_label.setStyleSheet('font-size: 18px; font-weight: 700; padding: 10px 14px; border-radius: 9px; '
             + ('background: #50371b; color: #ffe0a3;' if cloud and self._dark_theme else
                'background: #fff0d8; color: #734706;' if cloud else

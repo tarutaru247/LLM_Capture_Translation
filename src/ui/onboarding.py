@@ -1,7 +1,7 @@
 """Terms are separate from download; neither checkbox is preselected."""
 from pathlib import Path
 import threading
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, Qt
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QMessageBox, QProgressBar, QPushButton, QTabWidget, QTextBrowser, QVBoxLayout)
 from ..translator.plamo_runtime import resource_root
@@ -85,6 +85,7 @@ class ModelSetupDialog(QDialog):
         layout.addWidget(self.profile)
         self.progress = QProgressBar(); layout.addWidget(self.progress)
         self.status = QLabel('すでにモデルがある場合も、サイズとSHA-256を確認します。')
+        self.status.setTextFormat(Qt.PlainText)
         self.status.setWordWrap(True); layout.addWidget(self.status)
         ocr = QLabel('画像の文字認識にはWindowsのOCR言語機能が必要です。\n英語・中国語など、読み取る言語はアプリの設定で選べます。')
         ocr.setWordWrap(True); layout.addWidget(ocr)

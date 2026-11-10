@@ -115,6 +115,7 @@ class SettingsDialog(QDialog):
 
     def _note(self, layout, text):
         label = QLabel(text)
+        label.setTextFormat(Qt.PlainText)
         label.setWordWrap(True)
         label.setObjectName("muted")
         layout.addWidget(label)

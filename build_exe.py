@@ -81,9 +81,11 @@ def create_executable():
     # Keep only plugins used by this Windows Widgets app (PNG/ICO resources, no network Qt APIs).
     qt_folder = destination / '_internal/PySide6'
     # Qt uses the Windows ICU API. Never shadow it with an unrelated application's ICU DLL.
-    for name in ('icuuc.dll', 'icudt78.dll'):
-        file = destination / '_internal' / name
-        if file.is_file() and file.resolve().is_relative_to(destination): file.unlink()
+    unused_libraries = {'qt6network.dll', 'qt6svg.dll', 'opengl32sw.dll', 'icuuc.dll', 'icudt78.dll'}
+    for file in (destination / '_internal').rglob('*.dll'):
+        if file.name.lower() in unused_libraries:
+            if not file.resolve().is_relative_to(destination): raise RuntimeError('Unsafe library path')
+            file.unlink()
     # Microsoft CRT is an explicit prerequisite installed by users from Microsoft.
     # Avoid assuming that the publisher owns a Visual Studio redistribution license.
     for file in (destination / '_internal').rglob('*.dll'):
@@ -116,7 +118,7 @@ def create_executable():
             file.unlink()
     for file in ('LICENSE','README.md'):
         shutil.copyfile(root / file, destination / file)
-    for file in ('THIRD_PARTY_NOTICES.md','TERMS-ja.md','DISTRIBUTION.md','requirements-release-lock.txt'):
+    for file in ('THIRD_PARTY_NOTICES.md','TERMS-ja.md','DISTRIBUTION.md','RELEASE_STATUS.md','requirements-release-lock.txt'):
         shutil.copyfile(root / 'docs' / file, destination / file)
     for file in ('dependencies.json','requirements-lock.txt'):
         shutil.copyfile(metadata / file, destination / file)
@@ -129,7 +131,7 @@ def create_executable():
                     archive.write(file, file.relative_to(root))
         for file in ('main.py','build_exe.py','requirements.txt','setup_local_runtime.py','README.md','LICENSE'):
             archive.write(root / file, file)
-        for file in ('TERMS-ja.md','DISTRIBUTION.md','THIRD_PARTY_NOTICES.md','requirements-release-lock.txt',
+        for file in ('TERMS-ja.md','DISTRIBUTION.md','RELEASE_STATUS.md','THIRD_PARTY_NOTICES.md','requirements-release-lock.txt',
                      'release_inventory.py','audit_dependencies.py','audit_public_repo.py','generate_icon.py','verify_distribution.py'):
             archive.write(root / 'docs' / file, 'docs/' + file)
     manifest = []

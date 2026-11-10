@@ -77,6 +77,8 @@ Python依存の正確な版と配布元は `dependencies.json`、各wheelが提�
 `_internal/docs/dependency-licenses` に保存します。Python本体のライセンスも同梱します。
 推論ランタイムの追加表示は `_internal/runtime/llama` / `llama-vulkan` の LICENSE ファイルを参照してください。
 クラウドサービスのAPIキーやモデルの重みは配布物に含めません。
+CPythonとそのネイティブ依存のライセンスは `Python-3.12.16.txt` / `Python-native/` に収録します。
+Python本体の配布元と対応ソースは `DISTRIBUTION.md` を参照してください。
 
 ## Microsoft C/C++ Runtime（別途導入）
 

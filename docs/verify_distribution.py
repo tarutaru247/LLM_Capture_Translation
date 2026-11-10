@@ -27,8 +27,7 @@ def main():
     assert not any(p.suffix.lower() == '.gguf' for p in files)
     assert not any(p.name.lower() in ('settings.json', 'history.sqlite3') for p in files)
     assert not any(p.suffix.lower() == '.dll' and p.name.lower().startswith(('vcruntime','msvcp','concrt','vcomp','vcamp','vccorlib')) for p in files)
-    assert not (folder / '_internal/PySide6/Qt6Network.dll').exists()
-    assert not (folder / '_internal/icuuc.dll').exists()
+    assert not any(p.name.lower() in ('qt6network.dll','qt6svg.dll','icuuc.dll','icudt78.dll','opengl32sw.dll') for p in files)
     for file in ('application-source.zip', 'LICENSE', 'TERMS-ja.md', 'DISTRIBUTION.md',
                  '_internal/docs/licenses/PLaMo-ja.txt', '_internal/docs/licenses/Qt-LGPL-3.0-only.txt'):
         assert (folder / file).is_file(), file

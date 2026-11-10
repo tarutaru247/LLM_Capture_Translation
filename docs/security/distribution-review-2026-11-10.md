@@ -80,7 +80,7 @@ Qtの対応修正版が利用可能になったら更新・再検証する。今
 
 - PLaMoの商用登録・追加契約が必要かは実際の配布・事業形態次第。エージェントは契約締結や登録を代行しない。
 - 旧exe / BOOTH配布のライセンス再整備。
-- GitHub改名: `tarutaru_translate` が指定名。CLIは接続失敗、操作可能なブラウザーは未ログインのため未完了。
+- GitHub改名: `tarutaru_translate` が指定名。ユーザーの指示により後回しとする。
 - 各クラウドの実アカウントによる疎通・課金条件は未確認。モックによるプロトコル検証と混同しない。
 - 新規PCの中国語OCR言語機能、異なるCPU / GPU / ドライバー環境の受け入れ確認。
 - Python本体・Windows・ドライバー・Vulkan等の修正状況は、Python依存39件の結果には含まれない。
@@ -112,3 +112,13 @@ Astral python-build-standalone 20261026の公式配布を固定SHA-256で照合�
 PC全体のPythonや既存の開発用仮想環境は置き換えない。古い3.12のまま配布ビルドしないようビルド時にも版を確認する。
 https://www.python.org/downloads/release/python-31213/
 https://github.com/astral-sh/python-build-standalone/releases/tag/20261026
+
+## 最終検証
+
+Python 3.12.16でも自動テスト47件が成功。exeでローカルOCRと、クラウド無効時に全9クラウド設定の
+処理が拒否されることを確認した。CPU / Vulkanの推論バイナリは起動確認済み。
+モデルを使ったHTTP翻訳の完了は、前述の実行環境の制限により未確認。
+配布物のSHA-256、ライセンス・ソースの同梱、モデル・利用者設定・履歴・MicrosoftランタイムDLLが
+含まれないことを `verify_distribution.py` で検査する。
+GitHubの通常pushもDNSエラーとなったため、接続ツールから `codex/distribution-preparation` に
+コミット済みソースのスナップショットを反映する。元の作業ブランチとmainの履歴は書き換えない。

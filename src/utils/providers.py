@@ -22,7 +22,7 @@ PROVIDERS = {
 
 
 def validate_endpoint(url, *, local=False):
-    if not isinstance(url, str) or any(ord(c) < 33 for c in url) or '\\' in url:
+    if not isinstance(url, str) or any(ord(c) < 33 for c in url) or any(c in url for c in '\\<>"'):
         raise ValueError('接続URLが不正です。')
     try:
         parsed = urlsplit(url)
