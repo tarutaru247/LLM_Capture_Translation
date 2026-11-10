@@ -1,8 +1,8 @@
 import sys
 import logging
-from PyQt5.QtWidgets import QApplication, QWidget, QRubberBand
-from PyQt5.QtCore import Qt, QRect, QPoint, QSize, pyqtSignal
-from PyQt5.QtGui import QPainter, QColor, QPixmap
+from PySide6.QtWidgets import QApplication, QWidget, QRubberBand
+from PySide6.QtCore import Qt, QRect, QPoint, QSize, Signal
+from PySide6.QtGui import QPainter, QColor, QPixmap
 
 logger = logging.getLogger("ocr_translator")
 
@@ -12,7 +12,7 @@ class ScreenCaptureWindow(QWidget):
     切り出すための全画面ウィンドウ。
     """
     # シグナル定義: 選択された領域のQPixmapを渡す
-    region_selected = pyqtSignal(QPixmap)
+    region_selected = Signal(QPixmap)
 
     def __init__(self):
         super().__init__()
@@ -144,7 +144,7 @@ class ScreenCaptureWindow(QWidget):
 
 # 単体テスト用のコード
 if __name__ == "__main__":
-    from PyQt5.QtWidgets import QMainWindow, QLabel
+    from PySide6.QtWidgets import QMainWindow, QLabel
 
     app = QApplication(sys.argv)
 
@@ -171,4 +171,4 @@ if __name__ == "__main__":
     capture_win.region_selected.connect(show_captured_image)
     capture_win.show()
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

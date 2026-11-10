@@ -1,5 +1,5 @@
 import abc
-from PyQt5.QtGui import QPixmap
+from PySide6.QtGui import QPixmap
 
 class OCRService(abc.ABC):
     """OCRサービスのための抽象基底クラス"""

@@ -3,7 +3,7 @@
 """
 import logging
 
-from PyQt5.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap
 
 from ..utils.settings_manager import SettingsManager
 from .combined_vision_translator import CombinedVisionTranslator

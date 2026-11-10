@@ -61,4 +61,8 @@ def build_generation_config_for_model(model_name: str | None):
 
 def create_google_client(api_key: str, timeout: int = 60) -> genai.Client:
     """Create a Google GenAI client for Gemini API."""
-    return genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout * 1000))
+    SettingsManager().require_cloud_access('gemini')
+    return genai.Client(vertexai=False, api_key=api_key,
+        http_options=types.HttpOptions(base_url='https://generativelanguage.googleapis.com', timeout=timeout * 1000,
+            client_args={'trust_env': False, 'follow_redirects': False},
+            async_client_args={'trust_env': False, 'follow_redirects': False}))

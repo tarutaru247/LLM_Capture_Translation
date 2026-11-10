@@ -3,8 +3,8 @@ import logging
 from io import BytesIO
 
 from PIL import Image
-from PyQt5.QtCore import QBuffer, QIODevice
-from PyQt5.QtGui import QImage, QPixmap
+from PySide6.QtCore import QBuffer, QIODevice
+from PySide6.QtGui import QImage, QPixmap
 
 from ..utils.google_ai import (
     create_google_client,
@@ -55,7 +55,7 @@ class VisionOCRService(OCRService):
                 logger.warning(
                     "Vision OCR モデル %s の呼び出しに失敗しました: %s",
                     model_name,
-                    sanitize_sensitive_data(str(exc)),
+                    type(exc).__name__,
                 )
                 can_retry = (
                     index < len(model_candidates) - 1

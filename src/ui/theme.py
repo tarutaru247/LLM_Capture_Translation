@@ -1,7 +1,7 @@
 """Shared green-accented native UI styles."""
 import sys
-from PyQt5.QtGui import QIcon, QPainter, QPen, QPixmap, QColor, QPalette
-from PyQt5.QtCore import Qt, QRectF
+from PySide6.QtGui import QIcon, QPainter, QPen, QPixmap, QColor, QPalette
+from PySide6.QtCore import Qt, QRectF
 
 
 def system_is_dark():
@@ -15,7 +15,7 @@ def system_is_dark():
             return value == 0
         except OSError:
             pass
-    from PyQt5.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication
     return QApplication.palette().window().color().lightness() < 128
 
 
@@ -47,7 +47,7 @@ def palette(dark=False):
 
 def apply_palette(window, dark):
     # Qt 5 input widgets may retain their own placeholder/disabled palette.
-    from PyQt5.QtWidgets import QWidget
+    from PySide6.QtWidgets import QWidget
     colors = palette(dark)
     window.setPalette(colors)
     for child in window.findChildren(QWidget):

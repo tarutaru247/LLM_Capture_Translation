@@ -11,10 +11,10 @@ import tempfile
 import threading
 import time
 
-from PyQt5.QtCore import QBuffer, QIODevice, QMimeData, QObject, Qt, QTimer, QSize, pyqtSignal
-from PyQt5.QtGui import QFont, QPixmap, QTextBlockFormat, QTextCursor
-from PyQt5.QtWidgets import (
-    QAction, QApplication, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtCore import QBuffer, QIODevice, QMimeData, QObject, Qt, QTimer, QSize, Signal
+from PySide6.QtGui import QAction, QFont, QPixmap, QTextBlockFormat, QTextCursor
+from PySide6.QtWidgets import (
+    QApplication, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox, QProgressBar, QDialog,
     QPushButton, QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -25,6 +25,7 @@ from ..translator.plamo_runtime import PlamoRuntime
 from ..utils.history_store import HistoryStore
 from ..utils.localization import SUPPORTED_APP_LANGUAGES, get_language_name, get_ui_string
 from ..utils.settings_manager import SettingsManager
+from ..utils.providers import PROVIDERS
 from ..utils.utils import sanitize_sensitive_data
 
 WM_HOTKEY = 0x0312
@@ -32,8 +33,8 @@ MOD_NOREPEAT = 0x4000
 
 
 class ResultBridge(QObject):
-    result_ready = pyqtSignal(dict)
-    model_ready = pyqtSignal(str)
+    result_ready = Signal(dict)
+    model_ready = Signal(str)
 
 
 class MainWindow(QMainWindow):
@@ -92,7 +93,7 @@ class MainWindow(QMainWindow):
     def _init_ui(self):
         self.setMinimumSize(900, 620)
         self.resize(1180, 800)
-        self.setWindowTitle("スクショAI翻訳")
+        self.setWindowTitle("たる翻訳")
         central = QWidget()
         outer = QHBoxLayout(central)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -103,7 +104,7 @@ class MainWindow(QMainWindow):
         side = QVBoxLayout(self.sidebar)
         side.setContentsMargins(14, 24, 14, 18)
         side.setSpacing(15)
-        side.addWidget(self._label("スクショAI翻訳", "brand"))
+        side.addWidget(self._label("たる翻訳", "brand"))
         self.new_button = self._button(self.tr_ui("new_translation"), self._new_translation, "plus")
         side.addWidget(self.new_button)
         self.history_search = QLineEdit()
@@ -156,7 +157,9 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.capture_button)
         work.addLayout(toolbar)
         divider = QFrame(); divider.setObjectName("divider"); work.addWidget(divider)
-        self.mode_label = self._label("", "metadata"); work.addWidget(self.mode_label)
+        self.mode_label = self._label("", "transportBadge"); work.addWidget(self.mode_label)
+        self.mode_label.setWordWrap(True)
+        self.mode_detail = self._label('', 'metadata'); self.mode_detail.setWordWrap(True); work.addWidget(self.mode_detail)
         self.result_splitter = QSplitter(Qt.Vertical)
         translation_panel = QWidget()
         translation_layout = QVBoxLayout(translation_panel)
@@ -248,6 +251,7 @@ class MainWindow(QMainWindow):
                 dialog.setStyleSheet(self.styleSheet())
                 apply_palette(dialog, dark)
                 native_title_bar(dialog, dark)
+            self._apply_texts()
         finally:
             self._applying_theme = False
 
@@ -267,9 +271,28 @@ class MainWindow(QMainWindow):
         self.original_text_edit.setPlaceholderText(self.tr_ui("empty_source"))
         self.hint_label.setText(self.tr_ui("shortcut_hint", shortcut=self.settings_manager.get_setting("shortcuts", "selection")))
         self.capture_button.setToolTip(self.settings_manager.get_setting("shortcuts", "capture"))
-        local = self.settings_manager.get_translation_provider() == "plamo"
-        self.mode_label.setText(self.tr_ui("provider_local" if local else "provider_cloud"))
-        self.notice_label.setText(self.tr_ui("local_notice" if local else "cloud_notice"))
+        provider = self.settings_manager.get_translation_provider()
+        cloud = provider in PROVIDERS
+        self.mode_label.setText('☁  クラウド翻訳 · 外部へ送信' if cloud else '●  ローカル翻訳 · このPCで処理')
+        self.mode_label.setStyleSheet('font-size: 18px; font-weight: 700; padding: 10px 14px; border-radius: 9px; '
+            + ('background: #50371b; color: #ffe0a3;' if cloud and self._dark_theme else
+               'background: #fff0d8; color: #734706;' if cloud else
+               'background: #163d2c; color: #a4f3ba;' if self._dark_theme else 'background: #e1f8e8; color: #186537;'))
+        if provider == 'plamo':
+            from ..utils.model_catalog import MODELS
+            detail = MODELS[self.settings_manager.get_local_profile()]['name'] + ' · Windows OCR'
+            notice = '画像の文字認識と翻訳はPC内で処理します。クラウドへの送信はありません。'
+        elif provider == 'local_api':
+            detail = 'ローカルAPI · ' + self.settings_manager.get_setting('local_api', 'model', '')
+            notice = 'このアプリはPC内のAPIへ接続します。接続先サーバー自体の外部送信設定も確認してください。'
+        else:
+            from urllib.parse import urlsplit
+            model = self.settings_manager.get_model() if provider == 'gemini' else self.settings_manager.get_cloud_account().get('model', '')
+            destination = 'Google Gemini API' if provider == 'gemini' else PROVIDERS[provider][1] or self.settings_manager.get_cloud_account().get('base_url', '')
+            detail = PROVIDERS[provider][0] + ' · ' + model + ' · ' + (urlsplit(destination).netloc or destination)
+            notice = '画像または原文をGoogleへ送信します。' if provider == 'gemini' else '原文（画像の場合はPC内OCRで読み取った文章）を設定した外部APIへ送信します。'
+        self.mode_detail.setText(detail)
+        self.notice_label.setText(notice)
         self.source_language_label.setText(self.tr_ui("auto_detect"))
 
     def _notify(self, message):
@@ -288,8 +311,9 @@ class MainWindow(QMainWindow):
         self.copy_translation_button.setEnabled(bool(self.translated_text))
 
     def _load_local_model(self):
-        if self.settings_manager.get_translation_provider() == "gemini":
-            self.model_status.setText("● " + self.tr_ui("cloud_ready"))
+        provider = self.settings_manager.get_translation_provider()
+        if provider != "plamo":
+            self.model_status.setText('● ' + ('クラウドAPIを使用' if provider in PROVIDERS else 'ローカルAPIを使用'))
             self._set_busy(False)
             return
         self._model_loading = True
@@ -326,7 +350,7 @@ class MainWindow(QMainWindow):
         if local and not self.runtime.ready:
             self._notify(self.tr_ui("model_not_ready"))
             return False
-        if not local and not self.settings_manager.get_api_key():
+        if self.settings_manager.get_translation_provider() in PROVIDERS and not self.settings_manager.get_cloud_api_key():
             self._notify(self.tr_ui("api_required"))
             return False
         return True
@@ -369,12 +393,13 @@ class MainWindow(QMainWindow):
             if category != group:
                 heading = QListWidgetItem(self.tr_ui(category))
                 heading.setFlags(Qt.NoItemFlags)
-                heading.setFont(QFont("Segoe UI", 10, QFont.DemiBold))
+                heading.setFont(QFont("Segoe UI", 10, QFont.Weight.DemiBold))
                 self.history_list.addItem(heading)
                 group = category
             title = (record["original"] or record["translated"]).replace("\n", " ").strip()
             title = title[:23] + ("…" if len(title) > 23 else "")
-            metadata = f"{get_language_name(record['target_lang'])} · {dt.strftime('%H:%M')} · {'PLaMo' if record['provider']=='plamo' else 'Gemini'}"
+            backend = 'PLaMo' if record['provider'] == 'plamo' else 'ローカルAPI' if record['provider'] == 'local_api' else PROVIDERS.get(record['provider'], (record['provider'],))[0]
+            metadata = f"{get_language_name(record['target_lang'])} · {dt.strftime('%H:%M')} · {backend}"
             item = QListWidgetItem(title + "\n" + metadata)
             item.setData(Qt.UserRole, record["id"])
             item.setToolTip((record["original"] or record["translated"])[:200])
@@ -401,7 +426,7 @@ class MainWindow(QMainWindow):
             return
         menu = QMenu(self)
         action = menu.addAction(self.tr_ui("delete_history"))
-        if menu.exec_(self.history_list.mapToGlobal(position)) == action:
+        if menu.exec(self.history_list.mapToGlobal(position)) == action:
             if QMessageBox.question(self, self.tr_ui("history"), self.tr_ui("delete_confirm"), QMessageBox.Yes|QMessageBox.No, QMessageBox.No) == QMessageBox.Yes:
                 record_id = item.data(Qt.UserRole)
                 self.history_store.delete(record_id)
@@ -416,7 +441,7 @@ class MainWindow(QMainWindow):
         self.translation_text_edit.setPlainText(self.translated_text)
         cursor = self.translation_text_edit.textCursor()
         cursor.select(QTextCursor.Document)
-        block = QTextBlockFormat(); block.setLineHeight(160, QTextBlockFormat.ProportionalHeight)
+        block = QTextBlockFormat(); block.setLineHeight(160, QTextBlockFormat.ProportionalHeight.value)
         cursor.mergeBlockFormat(block)
         cursor.clearSelection(); cursor.movePosition(QTextCursor.Start)
         self.translation_text_edit.setTextCursor(cursor)
@@ -425,14 +450,13 @@ class MainWindow(QMainWindow):
         self.source_language_label.setText(get_language_name(lang) if lang in SUPPORTED_APP_LANGUAGES else self.tr_ui("auto_detect"))
         target = get_language_name(result.get("target_lang", self.settings_manager.get_target_language()))
         when = datetime.fromisoformat(result["created_at"]).astimezone().strftime("%m/%d %H:%M") if result.get("created_at") else datetime.now().strftime("%H:%M")
-        self.metadata_label.setText(f"{target} · {when} · {result.get('last_used_model') or ''}")
+        origin = 'クラウド' if result.get('provider') in PROVIDERS else 'ローカル'
+        self.metadata_label.setText(f"この結果：{origin} · {target} · {when} · {result.get('last_used_model') or ''}")
         self._set_busy(False)
 
     def start_capture(self):
         if not self._can_translate() or self.capture_window is not None:
             return
-        if not self.settings_manager.get_api_key():
-            self._notify(self.tr_ui("api_required")); return
         self._captured = False
         self.hide()
         QApplication.processEvents()
@@ -539,7 +563,7 @@ class MainWindow(QMainWindow):
         old_local = dict(self.settings_manager.settings["local_model"])
         old_provider = self.settings_manager.get_translation_provider()
         dialog = SettingsDialog(self)
-        accepted = dialog.exec_()
+        accepted = dialog.exec()
         # Clearing history is immediate, even if other settings were cancelled.
         self._load_history()
         if self._current_history_id and not self.history_store.get(self._current_history_id):

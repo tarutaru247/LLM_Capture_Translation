@@ -4,9 +4,9 @@ from pathlib import Path
 import re
 import threading
 
-from PyQt5.QtCore import QObject, Qt, pyqtSignal
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QKeySequence
+from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
     QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QMessageBox, QProgressBar,
     QPushButton, QScrollArea, QSpinBox, QStackedWidget, QTextBrowser, QVBoxLayout, QWidget,
@@ -14,6 +14,9 @@ from PyQt5.QtWidgets import (
 from ..utils.history_store import HistoryStore
 from ..utils.localization import SUPPORTED_APP_LANGUAGES, get_language_name, get_ui_string
 from ..utils.model_catalog import MODELS, download_model
+from ..utils.providers import PROVIDERS, validate_endpoint
+from ..utils import secure_storage
+from .onboarding import ensure_terms
 from ..utils.settings_manager import SettingsManager
 from ..translator.plamo_runtime import resource_root
 from .theme import is_dark, apply_palette, native_title_bar
@@ -30,8 +33,8 @@ def parse_shortcut(sequence):
 
 
 class DownloadBridge(QObject):
-    progress = pyqtSignal(int)
-    finished = pyqtSignal(str)
+    progress = Signal(int)
+    finished = Signal(str)
 
 
 class SettingsDialog(QDialog):
@@ -134,7 +137,11 @@ class SettingsDialog(QDialog):
         form.addRow(self.tr_ui("ui_language"), self.app_language_combo)
         form.addRow(self.tr_ui("target_language"), self.target_language_combo)
         form.addRow(self.tr_ui("appearance"), self.theme_combo)
+        self.ocr_language_combo = self._combo([('Windowsの優先言語', 'auto'), ('英語', 'en'),
+            ('中国語（簡体字）', 'zh-Hans'), ('中国語（繁体字）', 'zh-Hant'), ('日本語', 'ja'), ('韓国語', 'ko')])
+        form.addRow('画像のOCR言語', self.ocr_language_combo)
         layout.addLayout(form)
+        self._note(layout, '画像の文字認識はWindows標準OCRでPC内処理します。対応するOCR言語機能がない場合は、Windowsの「言語と地域」で追加してください。')
         layout.addStretch()
 
     def _translation_page(self):
@@ -155,7 +162,7 @@ class SettingsDialog(QDialog):
             self.provider_buttons.append(button)
             provider_row.addWidget(button, 1)
         layout.addLayout(provider_row)
-        self._note(layout, self.tr_ui("provider_note"))
+        self._note(layout, '標準はPC内で完結するPLaMoです。クラウドは「クラウド・OCR」で外部送信に同意して有効にした場合だけ選べます。')
         self.local_group = QWidget()
         local = QVBoxLayout(self.local_group)
         local.setContentsMargins(0, 8, 0, 0)
@@ -204,6 +211,14 @@ class SettingsDialog(QDialog):
         note = QLabel(self.tr_ui("format_note"))
         note.setWordWrap(True)
         advanced.addRow(note)
+        self.local_engine_combo = self._combo([('PLaMo（アプリ内蔵）', 'plamo'), ('別のローカルLLM（OpenAI互換API）', 'local_api')])
+        self.local_endpoint_edit = QLineEdit()
+        self.local_api_model_edit = QLineEdit()
+        advanced.addRow('ローカル翻訳エンジン', self.local_engine_combo)
+        advanced.addRow('APIベースURL', self.local_endpoint_edit)
+        advanced.addRow('ローカルモデル名', self.local_api_model_edit)
+        warning = QLabel('Ollama / LM Studio / llama.cpp等のローカルサーバー用です。127.0.0.1 / ::1のみ指定できます。サーバー自体が外部送信しない構成か確認してください。PLaMo以外のモデルはご自身で用意し、ライセンスを確認してください。')
+        warning.setWordWrap(True); advanced.addRow(warning)
         self.advanced_widget.hide()
         self.advanced_button.toggled.connect(self.advanced_widget.setVisible)
         local.addWidget(self.advanced_button)
@@ -216,7 +231,17 @@ class SettingsDialog(QDialog):
 
     def _cloud_page(self):
         layout = self._page("cloud_ocr")
-        self._note(layout, self.tr_ui("api_note"))
+        self.cloud_enabled = QCheckBox('クラウドでの翻訳を有効にする（オプション）')
+        self.cloud_enabled.toggled.connect(self._cloud_toggled)
+        layout.addWidget(self.cloud_enabled)
+        self._note(layout, '有効にすると翻訳内容を外部サービスへ送信します。Geminiには画像そのもの、その他のAPIにはローカルOCRで取り出した文章を送ります。履歴全体は送りません。料金・保存・学習利用は各サービスの条件に従います。')
+        self.cloud_controls = QWidget()
+        controls = QVBoxLayout(self.cloud_controls); controls.setContentsMargins(0, 0, 0, 0)
+        self.cloud_service_combo = self._combo([(value[0], key) for key, value in PROVIDERS.items()])
+        controls.addWidget(QLabel('送信先サービス'))
+        controls.addWidget(self.cloud_service_combo)
+        self.cloud_destination = QLabel(); self.cloud_destination.setWordWrap(True); controls.addWidget(self.cloud_destination)
+        self.gemini_controls = QWidget(); gemini = QVBoxLayout(self.gemini_controls); gemini.setContentsMargins(0, 0, 0, 0)
         form = QFormLayout()
         form.setSpacing(18)
         self.gemini_api_key_edit = QLineEdit()
@@ -230,10 +255,21 @@ class SettingsDialog(QDialog):
         form.addRow(self.tr_ui("google_api_key"), self.gemini_api_key_edit)
         form.addRow(self.tr_ui("llm_setting"), self.llm_mode_combo)
         form.addRow(self.tr_ui("model_name"), self.custom_model_edit)
-        form.addRow(self.tr_ui("timeout"), self.timeout_spin)
         self.llm_mode_combo.currentIndexChanged.connect(lambda: self.custom_model_edit.setEnabled(self.llm_mode_combo.currentData() == "custom"))
-        layout.addLayout(form)
-        self._note(layout, self.tr_ui("auto_model_note"))
+        gemini.addLayout(form)
+        self._note(gemini, self.tr_ui("auto_model_note"))
+        controls.addWidget(self.gemini_controls)
+        self.other_api_controls = QWidget(); other = QFormLayout(self.other_api_controls)
+        self.other_api_key_edit = QLineEdit(); self.other_api_key_edit.setEchoMode(QLineEdit.Password)
+        self.other_model_edit = QLineEdit(); self.other_model_edit.setPlaceholderText('提供元で利用できる正確なモデルID')
+        self.other_endpoint_edit = QLineEdit(); self.other_endpoint_edit.setPlaceholderText('https://example.com/v1')
+        other.addRow('APIキー', self.other_api_key_edit); other.addRow('モデル名', self.other_model_edit)
+        other.addRow('カスタムAPIベースURL', self.other_endpoint_edit)
+        controls.addWidget(self.other_api_controls)
+        common_form = QFormLayout(); common_form.addRow(self.tr_ui('timeout'), self.timeout_spin); controls.addLayout(common_form)
+        self._note(controls, 'OpenAIはResponses API、AnthropicはMessages API、その他はChat Completions互換APIを使用します。サービスを切り替えてもキーを別の提供元へ転用しません。カスタム接続はHTTPSのみです。')
+        layout.addWidget(self.cloud_controls)
+        self.cloud_service_combo.currentIndexChanged.connect(self._cloud_service_changed)
         layout.addStretch()
 
     def _shortcuts_page(self):
@@ -266,7 +302,7 @@ class SettingsDialog(QDialog):
 
     def _about_page(self):
         layout = self._page("about")
-        layout.addWidget(QLabel("スクショAI翻訳  ·  Built with PLaMo"))
+        layout.addWidget(QLabel("たる翻訳  ·  Built with PLaMo"))
         browser = QTextBrowser()
         browser.setOpenExternalLinks(True)
         notice = resource_root() / "docs/THIRD_PARTY_NOTICES.md"
@@ -289,6 +325,8 @@ class SettingsDialog(QDialog):
                              (self.provider_combo, settings.get_translation_provider()),
                              (self.profile_combo, self._current_profile),
                              (self.device_combo, settings.get_setting("local_model", "device", "auto")),
+                             (self.ocr_language_combo, settings.get_setting('ocr', 'language', 'auto')),
+                             (self.local_engine_combo, 'local_api' if settings.get_translation_provider() == 'local_api' else 'plamo'),
                              (self.llm_mode_combo, settings.get_llm_mode())]:
             self._set_combo(combo, value)
         self.model_path_edit.setText(self._paths[self._current_profile])
@@ -302,7 +340,46 @@ class SettingsDialog(QDialog):
         self.selection_shortcut.setKeySequence(QKeySequence(settings.get_setting("shortcuts", "selection")))
         self.history_enabled.setChecked(settings.get_setting("history", "enabled", True))
         self.history_limit.setValue(settings.get_setting("history", "limit", 500))
+        self.local_endpoint_edit.setText(settings.get_setting('local_api', 'base_url', ''))
+        self.local_api_model_edit.setText(settings.get_setting('local_api', 'model', ''))
+        self._cloud_accounts = copy.deepcopy(settings.settings['cloud_accounts'])
+        self._cloud_current = None
+        current = settings.get_translation_provider()
+        if current == 'local_api': self._set_combo(self.provider_combo, 'plamo')
+        elif current in PROVIDERS: self._set_combo(self.provider_combo, 'gemini')
+        self._set_combo(self.cloud_service_combo, current if current in PROVIDERS else settings.get_setting('cloud_api', 'provider', 'gemini'))
+        self.cloud_enabled.blockSignals(True); self.cloud_enabled.setChecked(settings.cloud_allowed()); self.cloud_enabled.blockSignals(False)
+        self._cloud_toggled(settings.cloud_allowed(), prompt=False)
+        self._cloud_service_changed()
         self._provider_changed()
+
+    def _cloud_toggled(self, enabled, prompt=True):
+        if enabled and prompt:
+            answer = QMessageBox.warning(self, '翻訳内容を外部へ送信します',
+                'クラウド翻訳を有効にすると、取り込んだ文章や画像が選択した外部サービスへ送信されます。\n\nGemini：画像または文章をGoogleへ送信\nその他：Windows OCRで取り出した文章を指定APIへ送信\n\n機密情報・個人情報の取り込みに注意してください。保存・学習利用は送信先の条件に従い、API利用料が発生する場合があります。\n有効にしますか？',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                self.cloud_enabled.blockSignals(True); self.cloud_enabled.setChecked(False); self.cloud_enabled.blockSignals(False)
+                enabled = False
+        self.cloud_controls.setEnabled(enabled)
+        self.provider_buttons[1].setEnabled(enabled)
+        if not enabled and self.provider_combo.currentData() == 'gemini': self.provider_combo.setCurrentIndex(0)
+
+    def _cloud_service_changed(self):
+        if not hasattr(self, '_cloud_accounts'): return
+        if self._cloud_current and self._cloud_current != 'gemini':
+            self._cloud_accounts[self._cloud_current] = {'api_key': self.other_api_key_edit.text(),
+                'model': self.other_model_edit.text(), 'base_url': self.other_endpoint_edit.text()}
+        provider = self.cloud_service_combo.currentData()
+        self._cloud_current = provider
+        account = self._cloud_accounts.get(provider, {})
+        key = account.get('api_key', '')
+        self.other_api_key_edit.setText(secure_storage.unprotect_secret(key) if key.startswith('dpapi:') else key)
+        self.other_model_edit.setText(account.get('model', ''))
+        self.other_endpoint_edit.setText(account.get('base_url', ''))
+        self.other_endpoint_edit.setEnabled(provider == 'custom')
+        self.gemini_controls.setVisible(provider == 'gemini'); self.other_api_controls.setVisible(provider != 'gemini')
+        self.cloud_destination.setText('送信先：' + ('Google Gemini API' if provider == 'gemini' else PROVIDERS[provider][1] or '下のカスタムURL（指定した運営者へ送信）'))
 
     def _provider_changed(self):
         self.local_group.setVisible(self.provider_combo.currentData() == "plamo")
@@ -322,6 +399,8 @@ class SettingsDialog(QDialog):
 
     def _download_model(self):
         if self._downloading:
+            return
+        if not ensure_terms(self.settings_manager, self):
             return
         path = self.model_path_edit.text().strip()
         if not path:
@@ -357,6 +436,7 @@ class SettingsDialog(QDialog):
             widget.setEnabled(not locked)
         for button in self.provider_buttons:
             button.setEnabled(not locked)
+        self.provider_buttons[1].setEnabled(not locked and self.cloud_enabled.isChecked())
 
     def _download_progress(self, percent):
         self.download_progress.setValue(percent)
@@ -384,17 +464,41 @@ class SettingsDialog(QDialog):
         except ValueError:
             QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("shortcut_invalid"))
             return
-        if self.llm_mode_combo.currentData() == "custom" and not self.custom_model_edit.text().strip():
+        cloud_provider = self.cloud_service_combo.currentData()
+        provider = (cloud_provider if self.provider_combo.currentData() == 'gemini' and self.cloud_enabled.isChecked()
+                    else self.local_engine_combo.currentData())
+        if provider == 'gemini' and self.llm_mode_combo.currentData() == "custom" and not self.custom_model_edit.text().strip():
             QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("validation_custom_model"))
             return
-        if self.provider_combo.currentData() == "gemini" and not self.gemini_api_key_edit.text().strip():
+        if provider == "gemini" and not self.gemini_api_key_edit.text().strip():
             QMessageBox.warning(self, self.tr_ui("settings"), self.tr_ui("api_required"))
             return
+        try:
+            if provider == 'local_api':
+                validate_endpoint(self.local_endpoint_edit.text().strip(), local=True)
+                if not self.local_api_model_edit.text().strip(): raise ValueError('ローカルモデル名を入力してください。')
+            if provider in PROVIDERS and provider != 'gemini':
+                if not self.other_model_edit.text().strip() or not self.other_api_key_edit.text().strip():
+                    raise ValueError('モデル名とAPIキーを入力してください。')
+                if provider == 'custom': validate_endpoint(self.other_endpoint_edit.text().strip())
+            old_custom = self.settings_manager.get_cloud_account('custom')
+            if cloud_provider == 'custom' and self.cloud_enabled.isChecked() and self.other_api_key_edit.text().strip():
+                endpoint = validate_endpoint(self.other_endpoint_edit.text().strip())
+                if endpoint != old_custom.get('base_url'):
+                    if QMessageBox.warning(self, 'カスタム送信先の確認',
+                        'このURLの運営者へAPIキーと翻訳内容を送信します。\n\n' + endpoint + '\n\n送信先を信頼できますか？',
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes: return
+        except ValueError as exc:
+            QMessageBox.warning(self, self.tr_ui('settings'), str(exc)); return
         settings = self.settings_manager
         before = copy.deepcopy(settings.settings)
         self._paths[self._current_profile] = self.model_path_edit.text().strip()
         for category, values in {
-            "translation": {"provider": self.provider_combo.currentData()},
+            "translation": {"provider": provider},
+            "privacy": {"cloud_enabled": self.cloud_enabled.isChecked(), 'cloud_consent_version': '1' if self.cloud_enabled.isChecked() else ''},
+            "ocr": {"language": self.ocr_language_combo.currentData()},
+            "local_api": {"base_url": self.local_endpoint_edit.text().strip(), "model": self.local_api_model_edit.text().strip()},
+            "cloud_api": {"provider": cloud_provider},
             "local_model": {"profile": self._current_profile, "device": self.device_combo.currentData(),
                             "lightweight_path": self._paths["lightweight"], "quality_path": self._paths["quality"],
                             "llama_server_path": self.cpu_runtime_edit.text().strip(), "gpu_server_path": self.gpu_runtime_edit.text().strip()},
@@ -406,7 +510,19 @@ class SettingsDialog(QDialog):
                 settings.set_setting(category, key, value)
         settings.set_app_language(self.app_language_combo.currentData())
         settings.set_target_language(self.target_language_combo.currentData())
-        settings.set_api_key("gemini", self.gemini_api_key_edit.text().strip())
+        try:
+            settings.set_api_key("gemini", self.gemini_api_key_edit.text().strip())
+            if cloud_provider != 'gemini':
+                self._cloud_accounts[cloud_provider] = {'api_key': self.other_api_key_edit.text().strip(),
+                    'model': self.other_model_edit.text().strip(), 'base_url': self.other_endpoint_edit.text().strip()}
+            for name, account in self._cloud_accounts.items():
+                account = dict(account)
+                key = account.get('api_key', '')
+                if key and not key.startswith('dpapi:'): account['api_key'] = secure_storage.protect_secret(key)
+                settings.set_setting('cloud_accounts', name, account)
+        except RuntimeError as exc:
+            settings.settings = before
+            QMessageBox.warning(self, self.tr_ui('settings'), str(exc)); return
         settings.set_custom_model(self.custom_model_edit.text().strip())
         settings.set_llm_mode(self.llm_mode_combo.currentData())
         settings.set_timeout(self.timeout_spin.value())

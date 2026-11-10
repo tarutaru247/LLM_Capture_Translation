@@ -50,7 +50,7 @@ class GeminiTranslator(TranslatorService):
                 logger.warning(
                     "Google AI モデル %s の呼び出しに失敗しました: %s",
                     model_name,
-                    sanitize_sensitive_data(str(exc)),
+                    type(exc).__name__,
                 )
                 can_retry = (
                     index < len(model_candidates) - 1
@@ -133,7 +133,7 @@ class GeminiTranslator(TranslatorService):
             logger.info("Google APIキーの検証に成功しました。")
             return True, ""
         except Exception as exc:
-            safe_exc = sanitize_sensitive_data(str(exc))
+            safe_exc = type(exc).__name__
             error_msg = f"Google APIキーの検証中にエラーが発生しました: {safe_exc}"
             logger.error(error_msg)
             if "timeout" in safe_exc.lower():

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import urllib.error
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.translator.plamo_runtime import PlamoRuntime, build_prompt
 from src.translator.translation_job import run_translation_job
@@ -40,7 +40,7 @@ class LocalTranslationTests(unittest.TestCase):
             build_prompt("Hello", "invalid")
 
     def test_ocr_job_never_translates_with_cloud(self):
-        with patch("src.translator.translation_job.VisionOCRService") as ocr:
+        with patch("src.translator.translation_job.LocalOCRService") as ocr:
             ocr.return_value.extract_text.return_value = "Hello world"
             for transcribe in (True, False):
                 result = run_translation_job(b"image", "ja", transcribe)
@@ -48,7 +48,7 @@ class LocalTranslationTests(unittest.TestCase):
                 self.assertIsNone(result["translated_text"])
 
     def test_ocr_failure_is_returned(self):
-        with patch("src.translator.translation_job.VisionOCRService") as ocr:
+        with patch("src.translator.translation_job.LocalOCRService") as ocr:
             ocr.return_value.extract_text.return_value = "エラー: test"
             self.assertEqual(run_translation_job(b"image", "ja", False)["error_message"], "エラー: test")
 

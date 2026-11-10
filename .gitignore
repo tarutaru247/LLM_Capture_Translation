@@ -16,6 +16,8 @@
 !/docs/**
 !/src/
 !/src/**
+!/resources/
+!/resources/**
 
 # Still ignore build artefacts within allowed directories
 __pycache__/

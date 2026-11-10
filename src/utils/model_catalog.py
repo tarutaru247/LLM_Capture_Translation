@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import urllib.request
+import uuid
 
 MODELS = {
     "lightweight": {
@@ -21,11 +22,26 @@ MODELS = {
 }
 
 
+def verify_model(profile, path, cancelled=lambda: False):
+    model = MODELS[profile]
+    digest = hashlib.sha256()
+    if Path(path).stat().st_size != model['size']:
+        raise RuntimeError('公式モデルとサイズが一致しません。指定した種類・ファイルを確認してください。')
+    with Path(path).open('rb') as file:
+        while chunk := file.read(1024 * 1024):
+            if cancelled(): raise RuntimeError('検証を中止しました。')
+            digest.update(chunk)
+    if digest.hexdigest() != model['sha256']:
+        raise RuntimeError('モデルのSHA-256が一致しません。別のファイルを選択してください。')
+
+
 def download_model(profile, destination, progress=lambda received, total: None, cancelled=lambda: False):
     model = MODELS[profile]
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(path.name + ".download")
+    if path.exists():
+        raise RuntimeError('既存ファイルは上書きしません。別の保存先を選んでください。')
+    partial = path.with_name(path.name + '.' + uuid.uuid4().hex + '.download')
     url = f"https://huggingface.co/{model['repo']}/resolve/{model['revision']}/{model['filename']}"
     digest = hashlib.sha256()
     received = 0
@@ -37,13 +53,18 @@ def download_model(profile, destination, progress=lambda received, total: None, 
                 chunk = response.read(1024 * 1024)
                 if not chunk:
                     break
+                received += len(chunk)
+                if received > model['size']:
+                    raise RuntimeError('配布元から想定を超えるサイズの応答がありました。')
                 output.write(chunk)
                 digest.update(chunk)
-                received += len(chunk)
                 progress(received, model["size"])
         if received != model["size"] or digest.hexdigest() != model["sha256"]:
             raise RuntimeError("ファイルの検証に失敗しました。再ダウンロードしてください。")
-        partial.replace(path)
+        # Windows rename refuses to overwrite a file created during download.
+        if path.exists():
+            raise RuntimeError('保存先にファイルが作成されたため中止しました。')
+        partial.rename(path)
     finally:
         if partial.exists():
             partial.unlink()

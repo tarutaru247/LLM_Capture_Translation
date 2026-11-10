@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from pathlib import Path
 from datetime import datetime
 
 _SENSITIVE_PATTERNS = [
@@ -21,7 +22,7 @@ _SENSITIVE_PATTERNS = [
 # ロギング設定
 def setup_logger() -> logging.Logger:
     """アプリケーションのロガーを設定する"""
-    log_dir = os.path.join(os.path.expanduser('~'), '.ocr_translator', 'logs')
+    log_dir = os.path.join(get_data_root(), 'logs')
     os.makedirs(log_dir, exist_ok=True)
 
     log_file = os.path.join(log_dir, f"ocr_translator_{datetime.now().strftime('%Y%m%d')}.log")
@@ -60,12 +61,13 @@ def sanitize_sensitive_data(text: str | None) -> str:
 # エラーハンドリング
 def handle_exception(logger: logging.Logger, e: Exception, context: str = "") -> str:
     """例外をログに記録し、ユーザーフレンドリーなメッセージを返す"""
-    detail = sanitize_sensitive_data(str(e))
-    error_msg = f"エラーが発生しました: {detail}"
+    # Provider exception bodies may echo source text and arbitrary-format credentials.
+    detail = type(e).__name__
+    error_msg = f"処理に失敗しました（{detail}）。設定・接続状態を確認してください。"
     if context:
         error_msg = f"{context}中にエラーが発生しました: {detail}"
 
-    logger.error(error_msg, exc_info=True)
+    logger.error(error_msg)
     return error_msg
 
 
@@ -79,11 +81,22 @@ def ensure_dir(directory: str) -> str:
 
 def get_temp_dir() -> str:
     """一時ファイル用のディレクトリパスを取得する"""
-    temp_dir = os.path.join(os.path.expanduser('~'), '.ocr_translator', 'temp')
+    temp_dir = os.path.join(get_data_root(), 'temp')
     return ensure_dir(temp_dir)
 
 
 def get_config_dir() -> str:
     """設定ファイル用のディレクトリパスを取得する"""
-    config_dir = os.path.join(os.path.expanduser('~'), '.ocr_translator', 'config')
+    config_dir = os.path.join(get_data_root(), 'config')
     return ensure_dir(config_dir)
+
+
+def get_data_root():
+    """Optional explicit local data directory, useful for portable installs and isolated QA."""
+    override = os.environ.get('TARUTARU_TRANSLATE_DATA_DIR', '')
+    if override:
+        path = Path(override)
+        if not path.is_absolute() or str(path).startswith(('\\\\', '//')):
+            raise ValueError('データ保存先にはPC内の絶対パスを指定してください。')
+        return str(path)
+    return os.path.join(os.path.expanduser('~'), '.ocr_translator')

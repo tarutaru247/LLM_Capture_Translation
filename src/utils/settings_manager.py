@@ -11,10 +11,11 @@ from typing import Any, Dict, Optional
 from ..utils import secure_storage
 from ..utils.localization import get_system_default_language, normalize_app_language
 from ..utils.utils import get_config_dir
+from .providers import PROVIDERS
 
 logger = logging.getLogger("ocr_translator")
 
-SUPPORTED_API_TYPES = ("gemini",)
+SUPPORTED_API_TYPES = tuple(PROVIDERS)
 DEFAULT_PRIMARY_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_FALLBACK_MODEL = "gemma-4-26b-a4b-it"
 DEFAULT_LLM_MODE = "auto"
@@ -48,6 +49,12 @@ class SettingsManager:
                 "gpu_server_path": "",
             },
             "translation": {"provider": "plamo"},
+            "privacy": {"cloud_enabled": False, "cloud_consent_version": ""},
+            "onboarding": {"terms_version": "", "accepted_at": "", "completed": False},
+            "ocr": {"language": "auto"},
+            "local_api": {"base_url": "http://127.0.0.1:1234/v1", "model": ""},
+            "cloud_api": {"provider": "gemini", "base_url": "", "model": "", "api_key": ""},
+            "cloud_accounts": {p: {"model": "", "base_url": "", "api_key": ""} for p in PROVIDERS if p != "gemini"},
             "history": {"enabled": True, "limit": 500},
             "shortcuts": {"capture": "Ctrl+Shift+X", "selection": "Ctrl+Shift+C"},
             "api": {
@@ -128,7 +135,7 @@ class SettingsManager:
                 dest[key] = value
 
     def _migrate_legacy_settings(self, settings: Optional[Dict[str, Any]] = None) -> None:
-        """Translate older OpenAI/Gemini mixed settings into the new Google-only schema."""
+        """Keep legacy Google fields while preserving explicit transport/consent settings."""
         if settings is None:
             settings = self.settings
         if not settings:
@@ -145,7 +152,7 @@ class SettingsManager:
         if local.get("device") not in ("auto", "cpu", "gpu"):
             local["device"] = "auto"
         translation = settings.setdefault("translation", {})
-        if translation.get("provider") not in ("plamo", "gemini"):
+        if translation.get("provider") not in ("plamo", "local_api", *PROVIDERS):
             translation["provider"] = "plamo"
         history = settings.setdefault("history", {})
         try:
@@ -195,7 +202,7 @@ class SettingsManager:
 
         api_settings["fallback_model"] = DEFAULT_FALLBACK_MODEL
         api_settings["models_by_api"] = {"gemini": DEFAULT_PRIMARY_MODEL}
-        api_settings.pop("openai_api_key", None)
+        # Older OpenAI credentials remain encrypted; never enable cloud during migration.
 
         language_settings = settings.setdefault("language", {})
         legacy_target = language_settings.get("target_language")
@@ -244,12 +251,32 @@ class SettingsManager:
             value = api_settings.get(field)
             if not value or (isinstance(value, str) and value.startswith("dpapi:")):
                 continue
-            api_settings[field] = secure_storage.protect_secret(str(value))
+            try:
+                api_settings[field] = secure_storage.protect_secret(str(value))
+            except RuntimeError:
+                api_settings[field] = ""
+                logger.error("暗号化できない旧APIキーをメモリから除去しました。再設定が必要です。")
+        cloud = settings.setdefault("cloud_api", {})
+        value = cloud.get("api_key", "")
+        if value and not value.startswith("dpapi:"):
+            try:
+                cloud["api_key"] = secure_storage.protect_secret(value)
+            except RuntimeError:
+                cloud["api_key"] = ""
+        for account in settings.get("cloud_accounts", {}).values():
+            if not isinstance(account, dict): continue
+            value = account.get("api_key", "")
+            if value and not value.startswith("dpapi:"):
+                try:
+                    account["api_key"] = secure_storage.protect_secret(value)
+                except RuntimeError:
+                    account["api_key"] = ""
 
     def save_settings(self) -> bool:
         """Persist current settings to disk."""
         try:
             self._migrate_legacy_settings()
+            self._normalize_api_key_storage()
             self._sync_active_model()
             temporary = self.config_file + ".tmp"
             with open(temporary, "w", encoding="utf-8") as fh:
@@ -319,7 +346,30 @@ class SettingsManager:
         return self.set_setting("language", "target_language", normalize_app_language(language_code))
 
     def get_translation_provider(self):
-        return self.get_setting("translation", "provider", "plamo")
+        provider = self.get_setting("translation", "provider", "plamo")
+        if provider in PROVIDERS and not self.cloud_allowed():
+            return "plamo"
+        return provider
+
+    def cloud_allowed(self):
+        return (self.get_setting("privacy", "cloud_enabled", False) is True
+                and self.get_setting("privacy", "cloud_consent_version", "") == "1")
+
+    def require_cloud_access(self, provider=None):
+        if not self.cloud_allowed():
+            raise PermissionError("クラウド翻訳は無効です。設定で外部送信に同意して有効にしてください。")
+        if provider is not None and self.get_translation_provider() != provider:
+            raise PermissionError('選択されていないクラウドサービスへの送信を中止しました。')
+
+    def get_cloud_api_key(self):
+        if self.get_translation_provider() == "gemini":
+            return self.get_api_key("gemini")
+        return secure_storage.unprotect_secret(self.get_cloud_account().get("api_key", ""))
+
+    def get_cloud_account(self, provider=None):
+        provider = provider or self.get_translation_provider()
+        account = self.get_setting('cloud_accounts', provider, {})
+        return account if isinstance(account, dict) else {}
 
     def get_local_profile(self):
         return self.get_setting("local_model", "profile", "lightweight")

@@ -1,22 +1,34 @@
 import sys
 import logging
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.ui.main_window import MainWindow
 from src.translator.translation_job_runner import main as translation_job_runner_main
 from src.utils.utils import setup_logger
+from src.utils.settings_manager import SettingsManager
+from src.ui.onboarding import ensure_terms, ModelSetupDialog
+from src.translator.plamo_runtime import resource_root
+from PySide6.QtGui import QIcon
 
-logger = setup_logger()
+logger = logging.getLogger('ocr_translator')
 
 def main():
     """アプリケーションのメインエントリーポイント"""
+    setup_logger()
     logger.info("アプリケーションを起動しています...")
 
-    # PyQt5アプリケーションの作成
+    # PySide6アプリケーションの作成
     app = QApplication(sys.argv)
-    app.setApplicationName("OCR翻訳ツール")
+    app.setApplicationName("たる翻訳")
     app.setOrganizationName("OCR Translator")
     app.setQuitOnLastWindowClosed(False)
+    app.setWindowIcon(QIcon(str(resource_root() / 'resources/icon.ico')))
+    settings = SettingsManager()
+    if not ensure_terms(settings):
+        return
+    if not settings.get_setting('onboarding', 'completed', False):
+        if ModelSetupDialog(settings).exec() != ModelSetupDialog.Accepted:
+            return
 
     # メインウィンドウの作成と表示
     # ホットキー処理はMainWindowに集約
@@ -26,7 +38,7 @@ def main():
     logger.info("メインウィンドウを表示しました")
 
     # アプリケーションの実行
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     if "--translation-worker" in sys.argv:

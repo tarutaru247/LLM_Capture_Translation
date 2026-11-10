@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PyQt5.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from src.utils.history_store import HistoryStore
 from src.utils.settings_manager import SettingsManager
 from src.translator.plamo_runtime import PlamoRuntime
@@ -70,7 +70,8 @@ class RedesignTests(unittest.TestCase):
         self.assertEqual(reopened.search(),[])
 
     def test_cloud_image_is_one_direct_request_without_separate_ocr(self):
-        with patch("src.translator.translation_job.CombinedVisionTranslator") as cloud, patch("src.translator.translation_job.VisionOCRService") as ocr:
+        with patch("src.translator.translation_job.SettingsManager") as sm, patch("src.translator.translation_job.CombinedVisionTranslator") as cloud, patch("src.translator.translation_job.LocalOCRService") as ocr:
+            sm.return_value.get_translation_provider.return_value = "gemini"
             cloud.return_value.translate_image_result.return_value = {"translated_text":"result","extracted_text":"source"}
             result = run_translation_job(b"image","ja",provider="gemini")
             self.assertEqual(result["translated_text"],"result")
@@ -78,7 +79,8 @@ class RedesignTests(unittest.TestCase):
             ocr.assert_not_called()
 
     def test_cloud_text_uses_text_translator(self):
-        with patch("src.translator.translation_job.GeminiTranslator") as cloud, patch("src.translator.translation_job.VisionOCRService") as ocr:
+        with patch("src.translator.translation_job.SettingsManager") as sm, patch("src.translator.translation_job.GeminiTranslator") as cloud, patch("src.translator.translation_job.LocalOCRService") as ocr:
+            sm.return_value.get_translation_provider.return_value = "gemini"
             cloud.return_value.translate.return_value = "result"
             result = run_translation_job(b"","ja",provider="gemini",text="source")
             self.assertEqual(result["extracted_text"],"source")

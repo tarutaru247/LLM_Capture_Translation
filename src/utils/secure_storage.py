@@ -1,6 +1,6 @@
 """
 Windows DPAPI を利用して秘密情報を保護/復号するユーティリティ。
-Windows 以外では平文をそのまま返すフォールバック動作を行う。
+暗号化できない場合は保存を拒否する。
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def _protect_via_dpapi(secret: str) -> Optional[str]:
             None,
             None,
             None,
-            0,
+            1,  # CRYPTPROTECT_UI_FORBIDDEN: fail rather than prompt/hang.
             ctypes.byref(blob_out),
         ):
             return base64.b64encode(_from_blob(blob_out)).decode("ascii")
@@ -72,7 +72,7 @@ def _unprotect_via_dpapi(payload: str) -> Optional[str]:
             None,
             None,
             None,
-            0,
+            1,
             ctypes.byref(blob_out),
         ):
             return _from_blob(blob_out).decode("utf-8")
@@ -87,18 +87,16 @@ def _unprotect_via_dpapi(payload: str) -> Optional[str]:
 def protect_secret(secret: str) -> str:
     """
     秘密文字列を DPAPI で暗号化し、dpapi: 接頭辞付きで返す。
-    Windows 以外では平文を返す。
+    暗号化できない場合は保存を拒否する。
     """
     if not secret:
         return ""
     if os.name != "nt":
-        logger.warning("DPAPI 非対応環境のため平文を保存します (OS=%s)", os.name)
-        return secret
+        raise RuntimeError("APIキーを安全に保存できません。このアプリはWindows専用です。")
 
     encrypted = _protect_via_dpapi(secret)
     if encrypted is None:
-        logger.warning("DPAPI 暗号化に失敗したため平文を保存します")
-        return secret
+        raise RuntimeError("APIキーの暗号化に失敗したため、保存を中止しました。")
     return f"dpapi:{encrypted}"
 
 

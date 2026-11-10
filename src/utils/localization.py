@@ -3,7 +3,7 @@ Localization helpers for the application UI and translation target language.
 """
 from __future__ import annotations
 
-from PyQt5.QtCore import QLocale
+from PySide6.QtCore import QLocale
 
 SUPPORTED_APP_LANGUAGES = ("ja", "en", "zh", "ko")
 
@@ -51,7 +51,7 @@ STRINGS = {
         "settings_language_group": "言語 / Language",
         "google_api_key": "Google APIキー:",
         "google_api_key_placeholder": "Google AI Studio の APIキーを入力",
-        "llm_setting": "OCRモデル設定:",
+        "llm_setting": "Geminiモデル設定:",
         "llm_auto": "自動",
         "llm_custom": "カスタム",
         "auto_model_note": "自動では通常 `gemini-3.5-flash-lite` を使い、混雑や制限時は `gemma-4-26b-a4b-it` に自動切替します。",

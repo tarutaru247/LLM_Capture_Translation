@@ -1,7 +1,7 @@
 import logging
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QApplication
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QColor, QPalette, QFont
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QApplication
+from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
+from PySide6.QtGui import QColor, QPalette, QFont
 
 logger = logging.getLogger("ocr_translator")
 
@@ -89,4 +89,4 @@ if __name__ == "__main__":
     overlay = TranslationOverlay(test_text, position=(pos_x, pos_y), duration_ms=3000)
     overlay.show_and_fade_out()
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

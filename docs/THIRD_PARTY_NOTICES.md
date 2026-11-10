@@ -1,10 +1,10 @@
 # Third-party notices / 公開・配布時の条件
 
-確認日: 2026-11-06
+確認日: 2026-11-10
 
 ## PLaMo — Built with PLaMo
 
-このアプリは Preferred Networks の PLaMo 3 Translate 0.8B をローカルで利用します。
+このアプリは Preferred Networks の PLaMo 3 Translate 0.8B / 2B をローカルで利用します。
 モデル、モデルコード、トークナイザーには **PLaMo Community License** が適用されます。
 アプリ自身のMITライセンスをモデルに適用することはできません。
 モデルの重み・コード・トークナイザーはGitHubやexeに同梱せず、利用者が別途取得します。
@@ -37,22 +37,24 @@ MIT License。公式ランタイムは別途 `setup_local_runtime.py` で取得�
 ランタイムに付属する `LICENSE-LLVM-OpenMP` 等の表示も配布物に保持します。
 公式ソース: https://github.com/ggml-org/llama.cpp/tree/b12140
 
-## 既存のGUI依存: PyQt5 / Qt
+## GUI: PySide6 / Shiboken6 / Qt 6.12.0
 
-PyQt5はGPLv3またはRiverbank商用ライセンスです。LGPL版のPyQt5はありません。
-このリポジトリの独自コードのMIT表記だけでは、PyQt5を含むexe全体を
-MITの条件だけで配布できることにはなりません。
-GPL版を使う配布物はGPLv3に従い、対応するソース・ビルド手順・ライセンス表示を提供する必要があります。
-GPL非互換の条件で配布する場合は適切な商用ライセンス等が必要です。
-モデルは別プロセスで実行し、PLaMoのコードや重みをGUIバイナリにリンク・内包しません。
+新版はPyQt5からPySide6へ移行しました。LGPLv3の選択肢を用います。
+GNU LGPLv3 / GPLv3の全文・関連するQtのライセンスを `docs/licenses/Qt-*` に収録しています。
+Qtの第三者部品の著作権・ライセンス表示は `Qt-third-party-attributions.json` と
+`Qt-third-party/` を参照してください。FreeTypeはFreeType Licenseの条件を選択します。
+Qtを使用していることを明示し、対応するソースの入手先・再ビルド・差し替え手順を
+`DISTRIBUTION.md` に記載しています。DLLを別ファイルとするonedir形式で配布します。
+ライブラリ改変・差し替え、およびそのデバッグのためのリバースエンジニアリングを禁止しません。
+独自アプリの対応ソースとビルド手順は配布物の `application-source.zip` にも収録します。
 
-Qt本体には別のライセンスが適用され、GPL版PyQtのwheelに含まれるQtは通常LGPLです。
-Qtの再リンク・差し替え等の条件も満たす配布方式を選んでください。
-既存のonefile版を含め、公開バイナリの配布条件が解消済みという意味ではありません。
-本変更ではプロジェクト全体のライセンス変更や商用契約を代行していません。
+- https://doc.qt.io/qtforpython-6/
+- https://doc.qt.io/qt-6/licensing.html
+- https://github.com/qtproject/pyside-pyside-setup/tree/v6.12.0
+- https://github.com/qt/qtbase/tree/v6.12.0
 
-- https://www.riverbankcomputing.com/software/pyqt/
-- https://www.riverbankcomputing.com/commercial/license-faq
+過去のPyQt5版exeはGPLv3またはRiverbank商用ライセンスの条件確認が別途必要です。
+新版の変更だけで、過去の配布物の条件が遡って解消するわけではありません。
 
 ## その他のライブラリ
 
@@ -60,3 +62,25 @@ Google GenAI (Apache-2.0)、Pillow (HPND等)、pynput (LGPL-3.0)、
 過去のBF16比較用のPyTorch (BSD系)、Transformers / Accelerate (Apache-2.0)、Numba (BSD系) 等は
 それぞれの配布物のライセンスが適用されます。再配布する依存物と推移的依存物の表示も保持してください。
 現在のアプリはBF16を使わず、これらBF16用ライブラリを配布物に含めません。
+
+## Windows OCR / 仮アイコン
+
+画像の文字認識はWindows標準のWindows.Media.Ocrを利用します。
+WindowsのOSファイル・OCR言語モデルをアプリに再配布しません。必要な機能はWindowsの言語設定から利用者が追加します。
+Windows機能にはMicrosoftの利用条件が適用されます。
+仮アイコンは本プロジェクト用に幾何学図形から作成したオリジナルで、独自コードと同じMITで提供します。
+外部のロゴ・フォントファイル・画像生成サービスの素材は使っていません。
+
+## 配布物の個別インベントリ
+
+Python依存の正確な版と配布元は `dependencies.json`、各wheelが提供するライセンス・著作権表示は
+`_internal/docs/dependency-licenses` に保存します。Python本体のライセンスも同梱します。
+推論ランタイムの追加表示は `_internal/runtime/llama` / `llama-vulkan` の LICENSE ファイルを参照してください。
+クラウドサービスのAPIキーやモデルの重みは配布物に含めません。
+
+## Microsoft C/C++ Runtime（別途導入）
+
+必要なMicrosoft C/C++ランタイムDLLは配布物に含めません。
+Microsoft公式から利用者自身が導入します。Microsoftの利用条件が適用されます。
+https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist
+https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/

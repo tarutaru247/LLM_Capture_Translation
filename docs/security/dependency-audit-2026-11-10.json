@@ -1,0 +1,280 @@
+{
+  "schema": 1,
+  "method": "PyPI release-specific JSON API, read through browser due to CLI DNS failure; active advisories only",
+  "scope": "39 release/build Python dependencies; does not cover native Qt/llama.cpp/Python/Windows vulnerabilities",
+  "packages": [
+    {
+      "name": "altgraph",
+      "version": "0.17.5",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:26:59.595Z",
+      "source": "https://pypi.org/pypi/altgraph/0.17.5/json"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:30.629Z",
+      "source": "https://pypi.org/pypi/annotated-types/0.7.0/json"
+    },
+    {
+      "name": "anyio",
+      "version": "4.16.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:35.739Z",
+      "source": "https://pypi.org/pypi/anyio/4.16.0/json"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.10.23",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:35.799Z",
+      "source": "https://pypi.org/pypi/certifi/2026.10.23/json"
+    },
+    {
+      "name": "cffi",
+      "version": "2.0.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:30.805Z",
+      "source": "https://pypi.org/pypi/cffi/2.0.0/json"
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.4.2",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:30.904Z",
+      "source": "https://pypi.org/pypi/charset-normalizer/3.4.2/json"
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.2",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:35.856Z",
+      "source": "https://pypi.org/pypi/cryptography/50.0.2/json"
+    },
+    {
+      "name": "distro",
+      "version": "1.9.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:31.024Z",
+      "source": "https://pypi.org/pypi/distro/1.9.0/json"
+    },
+    {
+      "name": "google-auth",
+      "version": "2.49.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:31.082Z",
+      "source": "https://pypi.org/pypi/google-auth/2.49.1/json"
+    },
+    {
+      "name": "google-genai",
+      "version": "1.70.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.252Z",
+      "source": "https://pypi.org/pypi/google-genai/1.70.0/json"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.306Z",
+      "source": "https://pypi.org/pypi/h11/0.16.0/json"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.365Z",
+      "source": "https://pypi.org/pypi/httpcore/1.0.9/json"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.422Z",
+      "source": "https://pypi.org/pypi/httpx/0.28.1/json"
+    },
+    {
+      "name": "idna",
+      "version": "3.20",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:35.911Z",
+      "source": "https://pypi.org/pypi/idna/3.20/json"
+    },
+    {
+      "name": "packaging",
+      "version": "25.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.549Z",
+      "source": "https://pypi.org/pypi/packaging/25.0/json"
+    },
+    {
+      "name": "pefile",
+      "version": "2023.2.7",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.603Z",
+      "source": "https://pypi.org/pypi/pefile/2023.2.7/json"
+    },
+    {
+      "name": "pillow",
+      "version": "13.0.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.662Z",
+      "source": "https://pypi.org/pypi/pillow/13.0.0/json"
+    },
+    {
+      "name": "pyasn1",
+      "version": "0.6.5",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:35.964Z",
+      "source": "https://pypi.org/pypi/pyasn1/0.6.5/json"
+    },
+    {
+      "name": "pyasn1-modules",
+      "version": "0.4.2",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:44.777Z",
+      "source": "https://pypi.org/pypi/pyasn1-modules/0.4.2/json"
+    },
+    {
+      "name": "pycparser",
+      "version": "3.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:58.381Z",
+      "source": "https://pypi.org/pypi/pycparser/3.0/json"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.11.5",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:58.437Z",
+      "source": "https://pypi.org/pypi/pydantic/2.11.5/json"
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.33.2",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:58.499Z",
+      "source": "https://pypi.org/pypi/pydantic-core/2.33.2/json"
+    },
+    {
+      "name": "pyinstaller",
+      "version": "6.22.3",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:27:02.142Z",
+      "source": "https://pypi.org/pypi/pyinstaller/6.22.3/json"
+    },
+    {
+      "name": "pyinstaller-hooks-contrib",
+      "version": "2026.10",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:27:04.946Z",
+      "source": "https://pypi.org/pypi/pyinstaller-hooks-contrib/2026.10/json"
+    },
+    {
+      "name": "pynput",
+      "version": "1.8.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.273Z",
+      "source": "https://pypi.org/pypi/pynput/1.8.1/json"
+    },
+    {
+      "name": "pyside6-essentials",
+      "version": "6.12.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.326Z",
+      "source": "https://pypi.org/pypi/pyside6-essentials/6.12.0/json"
+    },
+    {
+      "name": "pywin32-ctypes",
+      "version": "0.2.3",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.385Z",
+      "source": "https://pypi.org/pypi/pywin32-ctypes/0.2.3/json"
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:35.680Z",
+      "source": "https://pypi.org/pypi/requests/2.34.2/json"
+    },
+    {
+      "name": "setuptools",
+      "version": "84.2.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:36.019Z",
+      "source": "https://pypi.org/pypi/setuptools/84.2.1/json"
+    },
+    {
+      "name": "shiboken6",
+      "version": "6.12.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.501Z",
+      "source": "https://pypi.org/pypi/shiboken6/6.12.0/json"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.559Z",
+      "source": "https://pypi.org/pypi/six/1.17.0/json"
+    },
+    {
+      "name": "sniffio",
+      "version": "1.3.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.615Z",
+      "source": "https://pypi.org/pypi/sniffio/1.3.1/json"
+    },
+    {
+      "name": "tenacity",
+      "version": "9.1.4",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.673Z",
+      "source": "https://pypi.org/pypi/tenacity/9.1.4/json"
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:36.128Z",
+      "source": "https://pypi.org/pypi/typing-extensions/4.16.0/json"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.781Z",
+      "source": "https://pypi.org/pypi/typing-inspection/0.4.1/json"
+    },
+    {
+      "name": "urllib3",
+      "version": "2.8.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:17:36.075Z",
+      "source": "https://pypi.org/pypi/urllib3/2.8.0/json"
+    },
+    {
+      "name": "websockets",
+      "version": "16.0",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:13:59.903Z",
+      "source": "https://pypi.org/pypi/websockets/16.0/json"
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:46:52.191Z",
+      "source": "https://pypi.org/pypi/pyyaml/6.0.3/json"
+    },
+    {
+      "name": "rsa",
+      "version": "4.9.1",
+      "vulnerabilities": [],
+      "checked_at": "2026-11-10T02:46:52.248Z",
+      "source": "https://pypi.org/pypi/rsa/4.9.1/json"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 from ..utils.model_catalog import MODELS
+from ..utils.providers import NoRedirect
 
 
 def resource_root() -> Path:
@@ -43,7 +44,7 @@ class PlamoRuntime:
         self.ready = False
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        self._http = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
         self.log_path = Path(settings.config_dir) / "plamo-runtime.log"
 
     @property
@@ -107,7 +108,7 @@ class PlamoRuntime:
             self.url = f"http://127.0.0.1:{port}"
             command = [str(server), "-m", str(model), "--host", "127.0.0.1", "--port", str(port),
                        "-c", "8192", "-np", "1", "-ngl", "all" if gpu else "0",
-                       "--api-key", self.key, "--no-webui"]
+                       "--api-key", self.key, "--no-webui", "--log-verbosity", "0"]
             if not gpu:
                 command += ["--device", "none"]
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,8 +129,10 @@ class PlamoRuntime:
                         self.device_used = "GPU" if gpu else "CPU"
                         self.ready = True
                         return
-            except (OSError, urllib.error.URLError):
-                pass
+            except (OSError, urllib.error.URLError) as exc:
+                reason = getattr(exc, 'reason', exc)
+                if getattr(reason, 'winerror', None) == 10013:
+                    raise RuntimeError('Windowsまたは実行環境がPC内モデルへの接続を拒否しました。アプリのネットワーク権限を確認してください。') from None
             self._stop.wait(0.2)
         raise RuntimeError("モデルの読み込みが中断されたか、時間切れになりました。")
 
@@ -142,10 +145,12 @@ class PlamoRuntime:
                                          headers={"Content-Type": "application/json", "Authorization": "Bearer " + self.key})
         try:
             with self._http.open(request, timeout=max(120, self.settings.get_timeout())) as response:
-                result = json.load(response)
+                body = response.read(4 * 1024 * 1024 + 1)
+                if len(body) > 4 * 1024 * 1024:
+                    raise RuntimeError('ローカルモデルの応答が大きすぎます。')
+                result = json.loads(body)
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"ローカル翻訳に失敗しました: {detail[:300]}") from exc
+            raise RuntimeError(f"ローカル翻訳に失敗しました（HTTP {exc.code}）。モデルを再読み込みしてください。") from None
         except (OSError, urllib.error.URLError) as exc:
             self.close()
             raise RuntimeError("ローカルモデルとの通信が中断されました。設定メニューからモデルを再読み込みしてください。") from exc

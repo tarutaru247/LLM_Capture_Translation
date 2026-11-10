@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import logging
 
-from ..ocr.vision_ocr_service import VisionOCRService
+from ..ocr.local_ocr_service import LocalOCRService
+from ..utils.settings_manager import SettingsManager
+from ..utils.providers import PROVIDERS
+from .api_translator import APITranslator
 from .combined_vision_translator import CombinedVisionTranslator
 from .gemini_translator import GeminiTranslator
 
@@ -24,8 +27,13 @@ def run_translation_job(image_bytes: bytes, target_lang: str, transcribe_origina
     }
 
     try:
-        if provider not in ("plamo", "gemini"):
+        if provider not in ("plamo", "local_api", *PROVIDERS):
             raise ValueError("翻訳方式が不正です。")
+        settings = SettingsManager()
+        if provider in PROVIDERS:
+            settings.require_cloud_access()
+            if settings.get_translation_provider() != provider:
+                raise PermissionError("翻訳先が変更されています。もう一度翻訳してください。")
         if provider == "gemini":
             if text is not None:
                 translator = GeminiTranslator()
@@ -35,18 +43,29 @@ def run_translation_job(image_bytes: bytes, target_lang: str, transcribe_origina
                 result.update(extracted_text=text, translated_text=translated, last_used_model=translator.last_used_model)
                 return result
             return CombinedVisionTranslator().translate_image_result(image_bytes, target_lang)
+        if provider != "plamo":
+            original = text if text is not None else LocalOCRService().extract_text(image_bytes)
+            if not original.strip():
+                raise RuntimeError("画像から文字を読み取れませんでした。")
+            translator = APITranslator(settings)
+            translated = translator.translate(original, target_lang, local=provider == "local_api")
+            result.update(extracted_text=original, translated_text=translated, last_used_model=translator.last_used_model)
+            return result
         if text is not None:
             result["extracted_text"] = text
             return result
-        extracted_text = VisionOCRService().extract_text(image_bytes)
+        extracted_text = LocalOCRService().extract_text(image_bytes)
         if extracted_text and not extracted_text.startswith("エラー:"):
             result["extracted_text"] = extracted_text
         else:
             result["error_message"] = extracted_text or "テキストの抽出に失敗しました。"
     except Exception as exc:
-        logger.exception("バックグラウンド翻訳処理で予期せぬエラーが発生しました")
+        logger.error("バックグラウンド翻訳処理に失敗しました（%s）。", type(exc).__name__)
         from ..utils.utils import sanitize_sensitive_data
-        result["error_message"] = sanitize_sensitive_data(str(exc))
+        if provider == 'gemini' and not isinstance(exc, PermissionError):
+            result['error_message'] = 'Google APIで処理できませんでした。APIキー・モデル設定・利用制限・画像範囲を確認してください。'
+        else:
+            result["error_message"] = sanitize_sensitive_data(str(exc))
 
     return result
 
