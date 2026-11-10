@@ -35,6 +35,8 @@ MIT License。公式ランタイムは別途 `setup_local_runtime.py` で取得�
 配布する場合は、著作権・ライセンス表示を保持してください。
 `docs/licenses/llama.cpp.txt` に取得したバージョンのライセンスを収録しています。
 ランタイムに付属する `LICENSE-LLVM-OpenMP` 等の表示も配布物に保持します。
+組み込みのcpp-httplib、nlohmann/json、miniaudio、stb、ハッシュ関数等の表示は
+`docs/licenses/llama-vendor/` に収録します。miniaudio / stb等ではパブリックドメインの選択肢があります。
 公式ソース: https://github.com/ggml-org/llama.cpp/tree/b12140
 
 ## GUI: PySide6 / Shiboken6 / Qt 6.12.0
